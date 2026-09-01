@@ -1,1 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOTS Taxi — Ride</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif; background: #F7F5F0; color: #1F1E1B; margin: 0; padding: 24px 16px 60px; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: #8A8578; text-transform: uppercase; margin-bottom: 6px; }
+  h1 { font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.5px; color: #14251F; }
+  .sub { font-size: 13px; color: #5C584F; margin-top: 6px; line-height: 1.5; }
+  .card { background: #FFFFFF; border-radius: 12px; border: 1px solid #E8E4DA; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 13px; font-weight: 700; color: #14251F; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 16px; }
+  label { font-size: 11px; font-weight: 700; color: #8A8578; text-transform: uppercase; letter-spacing: 0.4px; display:block; margin-bottom: 4px;}
+  input { width: 100%; padding: 10px 11px; border: 1px solid #E8E4DA; border-radius: 7px; font-size: 14px; font-family: inherit; background: #FBFAF7; color: #1F1E1B; margin-bottom: 12px; }
+  input:focus { outline: none; border-color: #1467B3; }
+  button.primary { background: #1467B3; color: #FFFFFF; border: none; padding: 11px 18px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%; }
+  button.primary:hover { background: #0E4C86; }
+  button.primary:disabled { background: #C9C4B8; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid #E8E4DA; color: #8A8578; padding: 8px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  button.ghost:hover { border-color: #B0473F; color: #B0473F; }
+  .auth-error { color: #B0473F; font-size: 12.5px; margin-top: 8px; }
+  .auth-toggle { font-size: 12.5px; color: #1467B3; cursor: pointer; text-align: center; margin-top: 10px; font-weight: 600; }
+  .top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom: 18px; }
+  .top-row span { font-size: 12px; color: #5C584F; font-weight: 600; }
+  .status-line { text-align: center; font-size: 14px; font-weight: 700; margin-bottom: 14px; padding: 12px; border-radius: 8px; }
+  .status-line.requested { background: #FBF1E4; color: #A66A1F; }
+  .status-line.matched { background: #FBF1E4; color: #A66A1F; }
+  .status-line.accepted { background: #E6F4EA; color: #1E7A34; }
+  .status-line.no_drivers { background: #FBEAE8; color: #B0473F; }
+  .status-line.cancelled { background: #EDEDEB; color: #6B675E; }
+  .driver-line { font-size: 13px; color: #3A3A38; text-align:center; margin-bottom: 14px; }
+</style>
+</head>
+<body>
 
+<!-- ============ AUTH SCREEN ============ -->
+<div id="authScreen" style="max-width:380px; margin:60px auto;">
+  <div class="eyebrow" style="text-align:center;">DOTS Taxi</div>
+  <h1 style="text-align:center; margin-bottom:20px;" id="authTitle">Rider Sign In</h1>
+  <div class="card">
+    <div id="nameFieldWrap" style="display:none;"><label>Full Name</label><input id="auth-name" placeholder="Your name"></div>
+    <div><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com"></div>
+    <div><label>Password</label><input id="auth-password" type="password" placeholder="••••••••"></div>
+    <button class="primary" id="authSubmitBtn" onclick="handleAuthSubmit()">Sign In</button>
+    <div class="auth-error" id="authError"></div>
+    <div class="auth-toggle" id="authToggle" onclick="toggleAuthMode()">Need an account? Sign up</div>
+  </div>
+  <p style="font-size:12px; color:#8A8578; text-align:center;">Same DOTS login system &mdash; new accounts here are registered as riders.</p>
+</div>
+
+<!-- ============ WRONG ROLE ============ -->
+<div id="wrongRoleScreen" style="display:none; max-width:380px; margin:80px auto; text-align:center;">
+  <div class="card">
+    <div class="card-title">Wrong App</div>
+    <p style="font-size:13px; color:#5C584F;">This app is for riders. If you're a driver, staff, or car-hire owner, please use the relevant DOTS app instead.</p>
+    <button class="ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</div>
+
+<!-- ============ RIDER APP ============ -->
+<div id="riderApp" class="wrap" style="display:none;">
+  <div class="top-row">
+    <div class="eyebrow" style="margin-bottom:0;">DOTS Taxi</div>
+    <div><span id="riderUserEmail"></span> <button class="ghost" onclick="signOut()">Sign Out</button></div>
+  </div>
+
+  <div id="noRideSection">
+    <div class="card">
+      <div class="card-title">Request a Ride</div>
+      <label>Pickup Address</label>
+      <input id="r-pickup-address" placeholder="e.g. Manda Hill, Lusaka">
+      <label>Drop-off Address (optional)</label>
+      <input id="r-dest-address" placeholder="e.g. Levy Junction, Lusaka">
+      <p class="sub" id="locationStatusLine">We'll use your current location as the exact pickup point.</p>
+      <button class="primary" id="requestRideBtn" onclick="requestRide()">Request Ride</button>
+      <div class="auth-error" id="requestRideError"></div>
+    </div>
+  </div>
+
+  <div id="activeRideSection" style="display:none;">
+    <div class="card">
+      <div class="card-title">Your Ride</div>
+      <div class="status-line" id="rideStatusLine"></div>
+      <div class="driver-line" id="rideDriverLine"></div>
+      <p style="font-size:13px; color:#5C584F; text-align:center; margin: 0 0 14px;" id="rideRouteLine"></p>
+      <button class="ghost" style="width:100%;" id="cancelRideBtn" onclick="cancelRide()">Cancel Request</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://rtjzcqdxprrvewtbxgsi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0anpjcWR4cHJydmV3dGJ4Z3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwOTg4NzMsImV4cCI6MjEwMzY3NDg3M30.iZ5_cBx9InDwCG_kh2fhIlVAuikR3TikXHVfIDBdepM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ============ AUTH ============ */
+let authMode = 'signin';
+let currentUser = null;
+let currentUserRole = null;
+
+function toggleAuthMode() {
+  authMode = authMode === 'signin' ? 'signup' : 'signin';
+  document.getElementById('authTitle').textContent = authMode === 'signin' ? 'Rider Sign In' : 'Create Rider Account';
+  document.getElementById('authSubmitBtn').textContent = authMode === 'signin' ? 'Sign In' : 'Create Account';
+  document.getElementById('nameFieldWrap').style.display = authMode === 'signup' ? 'block' : 'none';
+  document.getElementById('authToggle').textContent = authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in';
+  document.getElementById('authError').textContent = '';
+}
+async function handleAuthSubmit() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const name = document.getElementById('auth-name').value.trim();
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Please enter email and password.'; return; }
+  if (authMode === 'signup') {
+    const { error } = await sb.auth.signUp({ email, password, options: { data: { name, intended_role: 'Rider' } } });
+    if (error) { errEl.textContent = error.message; return; }
+  } else {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { errEl.textContent = error.message; return; }
+  }
+}
+async function signOut() {
+  if (rideChannel) { sb.removeChannel(rideChannel); rideChannel = null; }
+  await sb.auth.signOut();
+}
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  document.getElementById('riderApp').style.display = 'none';
+  document.getElementById('wrongRoleScreen').style.display = 'none';
+  document.getElementById('authScreen').style.display = 'none';
+  if (session && session.user) {
+    currentUser = session.user;
+    const { data: profile } = await sb.from('profiles').select('role').eq('id', currentUser.id).single();
+    currentUserRole = profile ? profile.role : null;
+    if (currentUserRole === 'Rider') {
+      document.getElementById('riderApp').style.display = 'block';
+      document.getElementById('riderUserEmail').textContent = currentUser.email;
+      initRiderApp();
+    } else {
+      document.getElementById('wrongRoleScreen').style.display = 'block';
+    }
+  } else {
+    currentUser = null;
+    currentUserRole = null;
+    document.getElementById('authScreen').style.display = 'block';
+  }
+});
+
+/* ============ RIDER APP ============ */
+let myActiveRide = null;
+let rideChannel = null;
+
+async function initRiderApp() {
+  await fetchMyActiveRide();
+  subscribeToMyRides();
+}
+
+async function fetchMyActiveRide() {
+  const { data: rows } = await sb.from('rides')
+    .select('*, driver:profiles!rides_driver_id_fkey(name, phone)')
+    .eq('rider_id', currentUser.id)
+    .in('status', ['requested', 'matched', 'accepted', 'no_drivers'])
+    .order('requested_at', { ascending: false })
+    .limit(1);
+  myActiveRide = (rows && rows[0]) || null;
+
+  if (myActiveRide && myActiveRide.driver_id && (myActiveRide.status === 'matched' || myActiveRide.status === 'accepted')) {
+    const { data: taxiRows } = await sb.from('taxis').select('plate, model, color').eq('driver_user_id', myActiveRide.driver_id).limit(1);
+    myActiveRide.taxi = (taxiRows && taxiRows[0]) || null;
+  } else if (myActiveRide) {
+    myActiveRide.taxi = null;
+  }
+
+  renderRiderApp();
+}
+
+function subscribeToMyRides() {
+  if (rideChannel) return;
+  rideChannel = sb.channel('rider-rides-' + currentUser.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rides', filter: 'rider_id=eq.' + currentUser.id },
+      () => { fetchMyActiveRide(); })
+    .subscribe();
+}
+
+function renderRiderApp() {
+  const noRideSection = document.getElementById('noRideSection');
+  const activeRideSection = document.getElementById('activeRideSection');
+  if (!myActiveRide) {
+    noRideSection.style.display = 'block';
+    activeRideSection.style.display = 'none';
+    return;
+  }
+  noRideSection.style.display = 'none';
+  activeRideSection.style.display = 'block';
+
+  const statusLine = document.getElementById('rideStatusLine');
+  const labels = {
+    requested: 'Looking for a driver…',
+    matched: 'Driver assigned — waiting for them to accept',
+    accepted: 'Driver is on the way',
+    no_drivers: 'No drivers available right now'
+  };
+  statusLine.textContent = labels[myActiveRide.status] || myActiveRide.status;
+  statusLine.className = 'status-line ' + myActiveRide.status;
+
+  const driverLine = document.getElementById('rideDriverLine');
+  if ((myActiveRide.status === 'matched' || myActiveRide.status === 'accepted') && myActiveRide.driver) {
+    const t = myActiveRide.taxi;
+    driverLine.textContent = myActiveRide.driver.name + (t ? ' — ' + t.plate + ' (' + t.model + ')' : '');
+  } else {
+    driverLine.textContent = '';
+  }
+
+  document.getElementById('rideRouteLine').textContent =
+    'From ' + (myActiveRide.pickup_address || 'your location') +
+    (myActiveRide.dest_address ? ' to ' + myActiveRide.dest_address : '');
+
+  document.getElementById('cancelRideBtn').style.display =
+    (myActiveRide.status === 'requested' || myActiveRide.status === 'matched' || myActiveRide.status === 'no_drivers') ? 'block' : 'none';
+}
+
+async function requestRide() {
+  const pickupAddress = document.getElementById('r-pickup-address').value.trim();
+  const destAddress = document.getElementById('r-dest-address').value.trim();
+  const errEl = document.getElementById('requestRideError');
+  const btn = document.getElementById('requestRideBtn');
+  errEl.textContent = '';
+
+  if (!pickupAddress) { errEl.textContent = 'Please enter a pickup address.'; return; }
+  if (!navigator.geolocation) { errEl.textContent = 'Your browser doesn\u2019t support location — can\u2019t request a ride without it.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Getting your location…';
+
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    btn.textContent = 'Requesting…';
+    const { error } = await sb.from('rides').insert({
+      rider_id: currentUser.id,
+      pickup_lat: pos.coords.latitude,
+      pickup_lng: pos.coords.longitude,
+      pickup_address: pickupAddress,
+      dest_address: destAddress || null,
+      status: 'requested'
+    });
+    btn.disabled = false;
+    btn.textContent = 'Request Ride';
+    if (error) { errEl.textContent = 'Could not request ride: ' + error.message; return; }
+    document.getElementById('r-pickup-address').value = '';
+    document.getElementById('r-dest-address').value = '';
+    await fetchMyActiveRide();
+  }, (err) => {
+    btn.disabled = false;
+    btn.textContent = 'Request Ride';
+    errEl.textContent = 'Could not get your location: ' + err.message + '. Please allow location access to request a ride.';
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+async function cancelRide() {
+  if (!myActiveRide) return;
+  const { error } = await sb.from('rides').update({ status: 'cancelled' }).eq('id', myActiveRide.id);
+  if (error) { alert('Could not cancel: ' + error.message); return; }
+  await fetchMyActiveRide();
+}
+</script>
+</body>
+</html>
