@@ -104,6 +104,15 @@
       <div class="warning-banner" id="keepOpenWarning" style="display:none;">Keep this page open and your screen on while you're online. Location tracking stops if you switch apps or lock your phone — that's a real limit of a web app, not a bug.</div>
     </div>
   </div>
+
+  <div id="rideRequestCard" class="card" style="display:none; border-color:#1467B3;">
+    <div class="card-title">Ride Request</div>
+    <p id="rideRequestLine" style="font-size:14px; margin:0 0 16px; line-height:1.5;"></p>
+    <div style="display:flex; gap:10px;">
+      <button class="primary" style="flex:1;" onclick="acceptRide()">Accept</button>
+      <button class="ghost" style="flex:1;" onclick="declineRide()">Decline</button>
+    </div>
+  </div>
 </div>
 
 <!-- ============ STAFF APP (live monitoring) ============ -->
@@ -159,6 +168,7 @@ async function handleAuthSubmit() {
 }
 async function signOut() {
   stopLocationWatch();
+  if (rideChannel) { sb.removeChannel(rideChannel); rideChannel = null; }
   await sb.auth.signOut();
 }
 
@@ -196,8 +206,59 @@ let locationWatchId = null;
 let lastLocationUpdateSent = 0;
 const LOCATION_UPDATE_THROTTLE_MS = 8000;
 
+let myActiveRide = null;
+let rideChannel = null;
+
 async function initDriverApp() {
   await fetchMyTaxi();
+  await fetchMyActiveRide();
+  subscribeToMyRides();
+}
+
+async function fetchMyActiveRide() {
+  const { data: rows } = await sb.from('rides')
+    .select('*')
+    .eq('driver_id', currentUser.id)
+    .in('status', ['matched', 'accepted'])
+    .order('requested_at', { ascending: false })
+    .limit(1);
+  myActiveRide = (rows && rows[0]) || null;
+  renderRideRequest();
+}
+
+function subscribeToMyRides() {
+  if (rideChannel) return;
+  rideChannel = sb.channel('driver-rides-' + currentUser.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rides', filter: 'driver_id=eq.' + currentUser.id },
+      () => { fetchMyActiveRide(); })
+    .subscribe();
+}
+
+function renderRideRequest() {
+  const card = document.getElementById('rideRequestCard');
+  if (!myActiveRide || myActiveRide.status !== 'matched') {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('rideRequestLine').innerHTML =
+    '<strong>Pickup:</strong> ' + (myActiveRide.pickup_address || (myActiveRide.pickup_lat.toFixed(4) + ', ' + myActiveRide.pickup_lng.toFixed(4))) +
+    '<br><strong>Drop-off:</strong> ' + (myActiveRide.dest_address || 'Not specified');
+}
+
+async function acceptRide() {
+  if (!myActiveRide) return;
+  const { error } = await sb.from('rides').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', myActiveRide.id);
+  if (error) { alert('Could not accept ride: ' + error.message); return; }
+  await fetchMyActiveRide();
+}
+
+async function declineRide() {
+  if (!myActiveRide) return;
+  const { error } = await sb.rpc('decline_ride', { ride_id_in: myActiveRide.id });
+  if (error) { alert('Could not decline ride: ' + error.message); return; }
+  myActiveRide = null;
+  renderRideRequest();
 }
 async function fetchMyTaxi() {
   const { data: rows } = await sb.from('taxis').select('*').eq('driver_user_id', currentUser.id).limit(1);
