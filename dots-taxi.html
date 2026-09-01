@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOTS Taxi — Driver</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif; background: #F7F5F0; color: #1F1E1B; margin: 0; padding: 24px 16px 60px; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  .wide { max-width: 900px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: #8A8578; text-transform: uppercase; margin-bottom: 6px; }
+  h1 { font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.5px; color: #14251F; }
+  .sub { font-size: 13px; color: #5C584F; margin-top: 6px; line-height: 1.5; }
+  .card { background: #FFFFFF; border-radius: 12px; border: 1px solid #E8E4DA; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 13px; font-weight: 700; color: #14251F; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 16px; }
+  .form-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+  label { font-size: 11px; font-weight: 700; color: #8A8578; text-transform: uppercase; letter-spacing: 0.4px; display:block; margin-bottom: 4px;}
+  input, select { width: 100%; padding: 10px 11px; border: 1px solid #E8E4DA; border-radius: 7px; font-size: 14px; font-family: inherit; background: #FBFAF7; color: #1F1E1B; }
+  input:focus, select:focus { outline: none; border-color: #1467B3; }
+  button.primary { background: #1467B3; color: #FFFFFF; border: none; padding: 11px 18px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  button.primary:hover { background: #0E4C86; }
+  button.ghost { background: transparent; border: 1px solid #E8E4DA; color: #8A8578; padding: 8px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  button.ghost:hover { border-color: #B0473F; color: #B0473F; }
+  .auth-error { color: #B0473F; font-size: 12.5px; margin-top: 8px; }
+  .auth-toggle { font-size: 12.5px; color: #1467B3; cursor: pointer; text-align: center; margin-top: 10px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10.5px; color: #8A8578; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid #E8E4DA; }
+  td { padding: 10px; border-bottom: 1px solid #F0EDE5; color: #3A3A38; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .empty-row td { text-align: center; color: #8A8578; padding: 20px; font-style: italic; }
+  .table-scroll { overflow-x: auto; }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .badge.online { background: #E6F4EA; color: #1E7A34; }
+  .badge.offline { background: #EDEDEB; color: #6B675E; }
+  .badge.ontrip { background: #FBF1E4; color: #A66A1F; }
+
+  .toggle-btn { width: 100%; padding: 20px; border-radius: 14px; border: none; font-size: 18px; font-weight: 800; cursor: pointer; }
+  .toggle-btn.offline { background: #1467B3; color: #fff; }
+  .toggle-btn.offline:hover { background: #0E4C86; }
+  .toggle-btn.online { background: #B0473F; color: #fff; }
+  .toggle-btn.online:hover { background: #8F392F; }
+  .status-line { text-align: center; font-size: 13px; font-weight: 700; margin-bottom: 14px; padding: 8px; border-radius: 8px; }
+  .status-line.online { background: #E6F4EA; color: #1E7A34; }
+  .status-line.offline { background: #EDEDEB; color: #6B675E; }
+  .warning-banner { background: #FBF1E4; color: #A66A1F; font-size: 12.5px; padding: 12px 14px; border-radius: 8px; margin-top: 14px; line-height: 1.5; }
+  .top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom: 18px; }
+  .top-row span { font-size: 12px; color: #5C584F; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="authScreen" style="max-width:380px; margin:60px auto;">
+  <div class="eyebrow" style="text-align:center;">DOTS Taxi</div>
+  <h1 style="text-align:center; margin-bottom:20px;" id="authTitle">Driver Sign In</h1>
+  <div class="card">
+    <div id="nameFieldWrap" style="display:none; margin-bottom:12px;"><label>Full Name</label><input id="auth-name" placeholder="Your name"></div>
+    <div style="margin-bottom:12px;"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com"></div>
+    <div style="margin-bottom:14px;"><label>Password</label><input id="auth-password" type="password" placeholder="••••••••"></div>
+    <button class="primary" style="width:100%;" id="authSubmitBtn" onclick="handleAuthSubmit()">Sign In</button>
+    <div class="auth-error" id="authError"></div>
+    <div class="auth-toggle" id="authToggle" onclick="toggleAuthMode()">Need an account? Sign up</div>
+  </div>
+  <p style="font-size:12px; color:#8A8578; text-align:center;">Same DOTS login system as the car-hire app &mdash; new accounts here are registered as drivers.</p>
+</div>
+
+<!-- ============ WRONG ROLE ============ -->
+<div id="wrongRoleScreen" style="display:none; max-width:380px; margin:80px auto; text-align:center;">
+  <div class="card">
+    <div class="card-title">Wrong App</div>
+    <p style="font-size:13px; color:#5C584F;">This app is for taxi drivers. If you're DOTS staff or a car-hire owner, please use the main DOTS Car Hire app instead.</p>
+    <button class="ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</div>
+
+<!-- ============ DRIVER APP ============ -->
+<div id="driverApp" class="wrap" style="display:none;">
+  <div class="top-row">
+    <div class="eyebrow" style="margin-bottom:0;">DOTS Taxi</div>
+    <div><span id="driverUserEmail"></span> <button class="ghost" onclick="signOut()">Sign Out</button></div>
+  </div>
+
+  <div id="noTaxiSection" style="display:none;">
+    <div class="card">
+      <div class="card-title">Register Your Taxi</div>
+      <div class="form-grid">
+        <div><label>Plate</label><input id="t-plate" placeholder="ABC 1234"></div>
+        <div><label>Make &amp; Model</label><input id="t-model" placeholder="Toyota Corolla"></div>
+        <div><label>Color (optional)</label><input id="t-color" placeholder="White"></div>
+      </div>
+      <button class="primary" onclick="addMyTaxi()">Register</button>
+      <div class="auth-error" id="addTaxiError"></div>
+    </div>
+  </div>
+
+  <div id="hasTaxiSection" style="display:none;">
+    <div class="card">
+      <div class="card-title">My Taxi</div>
+      <p id="taxiInfoLine" style="font-size:14px; font-weight:700; margin:0 0 16px;"></p>
+      <div class="status-line" id="statusLine"></div>
+      <button class="toggle-btn" id="onlineToggleBtn" onclick="toggleOnline()"></button>
+      <div class="warning-banner" id="keepOpenWarning" style="display:none;">Keep this page open and your screen on while you're online. Location tracking stops if you switch apps or lock your phone — that's a real limit of a web app, not a bug.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ STAFF APP (live monitoring) ============ -->
+<div id="staffApp" class="wrap wide" style="display:none;">
+  <div class="top-row">
+    <div class="eyebrow" style="margin-bottom:0;">DOTS Taxi</div>
+    <div><span id="staffUserEmail"></span> <button class="ghost" onclick="signOut()">Sign Out</button></div>
+  </div>
+  <h1>Live Taxi Status</h1>
+  <p class="sub">Updates automatically as drivers go online/offline and move — no need to refresh.</p>
+  <div class="card" style="margin-top:16px;">
+    <div class="table-scroll"><table><thead><tr><th>Taxi</th><th>Driver</th><th>Status</th><th>Position</th><th>Last Update</th></tr></thead><tbody id="staffTaxisTable"></tbody></table></div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://rtjzcqdxprrvewtbxgsi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0anpjcWR4cHJydmV3dGJ4Z3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwOTg4NzMsImV4cCI6MjEwMzY3NDg3M30.iZ5_cBx9InDwCG_kh2fhIlVAuikR3TikXHVfIDBdepM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function badgeClass(status) {
+  return (status || '').toLowerCase().replace(/[^a-z]/g, '');
+}
+function fmtCoord(v) { return typeof v === 'number' ? v.toFixed(5) : '—'; }
+
+/* ============ AUTH ============ */
+let authMode = 'signin';
+let currentUser = null;
+let currentUserRole = null;
+
+function toggleAuthMode() {
+  authMode = authMode === 'signin' ? 'signup' : 'signin';
+  document.getElementById('authTitle').textContent = authMode === 'signin' ? 'Driver Sign In' : 'Create Driver Account';
+  document.getElementById('authSubmitBtn').textContent = authMode === 'signin' ? 'Sign In' : 'Create Account';
+  document.getElementById('nameFieldWrap').style.display = authMode === 'signup' ? 'block' : 'none';
+  document.getElementById('authToggle').textContent = authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in';
+  document.getElementById('authError').textContent = '';
+}
+async function handleAuthSubmit() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const name = document.getElementById('auth-name').value.trim();
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Please enter email and password.'; return; }
+  if (authMode === 'signup') {
+    const { error } = await sb.auth.signUp({ email, password, options: { data: { name, intended_role: 'Driver' } } });
+    if (error) { errEl.textContent = error.message; return; }
+  } else {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { errEl.textContent = error.message; return; }
+  }
+}
+async function signOut() {
+  stopLocationWatch();
+  await sb.auth.signOut();
+}
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  document.getElementById('driverApp').style.display = 'none';
+  document.getElementById('staffApp').style.display = 'none';
+  document.getElementById('wrongRoleScreen').style.display = 'none';
+  document.getElementById('authScreen').style.display = 'none';
+  if (session && session.user) {
+    currentUser = session.user;
+    const { data: profile } = await sb.from('profiles').select('role').eq('id', currentUser.id).single();
+    currentUserRole = profile ? profile.role : null;
+    if (currentUserRole === 'Driver') {
+      document.getElementById('driverApp').style.display = 'block';
+      document.getElementById('driverUserEmail').textContent = currentUser.email;
+      initDriverApp();
+    } else if (currentUserRole === 'Staff') {
+      document.getElementById('staffApp').style.display = 'block';
+      document.getElementById('staffUserEmail').textContent = currentUser.email;
+      initStaffApp();
+    } else {
+      document.getElementById('wrongRoleScreen').style.display = 'block';
+    }
+  } else {
+    currentUser = null;
+    currentUserRole = null;
+    stopLocationWatch();
+    document.getElementById('authScreen').style.display = 'block';
+  }
+});
+
+/* ============ DRIVER APP ============ */
+let myTaxi = null;
+let locationWatchId = null;
+let lastLocationUpdateSent = 0;
+const LOCATION_UPDATE_THROTTLE_MS = 8000;
+
+async function initDriverApp() {
+  await fetchMyTaxi();
+}
+async function fetchMyTaxi() {
+  const { data: rows } = await sb.from('taxis').select('*').eq('driver_user_id', currentUser.id).limit(1);
+  myTaxi = (rows && rows[0]) || null;
+  renderDriverApp();
+}
+function renderDriverApp() {
+  const noTaxiSection = document.getElementById('noTaxiSection');
+  const hasTaxiSection = document.getElementById('hasTaxiSection');
+  if (!myTaxi) {
+    noTaxiSection.style.display = 'block';
+    hasTaxiSection.style.display = 'none';
+    return;
+  }
+  noTaxiSection.style.display = 'none';
+  hasTaxiSection.style.display = 'block';
+  document.getElementById('taxiInfoLine').textContent = `${myTaxi.plate} — ${myTaxi.model}${myTaxi.color ? ' (' + myTaxi.color + ')' : ''}`;
+  const isOnline = myTaxi.status === 'Online';
+  const toggleBtn = document.getElementById('onlineToggleBtn');
+  toggleBtn.textContent = isOnline ? 'Go Offline' : 'Go Online';
+  toggleBtn.className = 'toggle-btn ' + (isOnline ? 'online' : 'offline');
+  const statusLine = document.getElementById('statusLine');
+  statusLine.textContent = isOnline ? 'You are Online' : 'You are Offline';
+  statusLine.className = 'status-line ' + (isOnline ? 'online' : 'offline');
+  document.getElementById('keepOpenWarning').style.display = isOnline ? 'block' : 'none';
+  if (isOnline && !locationWatchId) startLocationWatch();
+  if (!isOnline && locationWatchId) stopLocationWatch();
+}
+async function addMyTaxi() {
+  const plate = document.getElementById('t-plate').value.trim();
+  const model = document.getElementById('t-model').value.trim();
+  const color = document.getElementById('t-color').value.trim();
+  const errEl = document.getElementById('addTaxiError');
+  errEl.textContent = '';
+  if (!plate || !model) { errEl.textContent = 'Please enter plate and model.'; return; }
+  const { error } = await sb.from('taxis').insert({ driver_user_id: currentUser.id, plate, model, color, status: 'Offline' });
+  if (error) { errEl.textContent = 'Could not save: ' + error.message; return; }
+  await fetchMyTaxi();
+}
+async function toggleOnline() {
+  if (!myTaxi) return;
+  const goingOnline = myTaxi.status !== 'Online';
+  if (!goingOnline) {
+    const { error } = await sb.from('taxis').update({ status: 'Offline' }).eq('id', myTaxi.id);
+    if (error) { alert('Could not go offline: ' + error.message); return; }
+    await fetchMyTaxi();
+    return;
+  }
+  if (!navigator.geolocation) {
+    alert('Your browser doesn\u2019t support location \u2014 can\u2019t go online without it.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { error } = await sb.from('taxis').update({
+      status: 'Online', current_lat: pos.coords.latitude, current_lng: pos.coords.longitude,
+      last_location_update: new Date().toISOString()
+    }).eq('id', myTaxi.id);
+    if (error) { alert('Could not go online: ' + error.message); return; }
+    await fetchMyTaxi();
+  }, (err) => {
+    alert('Could not get your location: ' + err.message + '. Please allow location access to go online.');
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+function startLocationWatch() {
+  if (locationWatchId || !navigator.geolocation) return;
+  locationWatchId = navigator.geolocation.watchPosition(async (pos) => {
+    const now = Date.now();
+    if (now - lastLocationUpdateSent < LOCATION_UPDATE_THROTTLE_MS) return;
+    lastLocationUpdateSent = now;
+    if (!myTaxi) return;
+    await sb.from('taxis').update({
+      current_lat: pos.coords.latitude, current_lng: pos.coords.longitude,
+      last_location_update: new Date().toISOString()
+    }).eq('id', myTaxi.id);
+  }, (err) => {
+    console.error('Location watch error:', err);
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+function stopLocationWatch() {
+  if (locationWatchId) {
+    navigator.geolocation.clearWatch(locationWatchId);
+    locationWatchId = null;
+  }
+}
+
+/* ============ STAFF APP (simple live monitoring) ============ */
+let staffTaxis = [];
+let staffChannel = null;
+function initStaffApp() {
+  fetchAllTaxis();
+  if (staffChannel) return;
+  staffChannel = sb.channel('taxis-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'taxis' }, () => { fetchAllTaxis(); })
+    .subscribe();
+}
+async function fetchAllTaxis() {
+  const { data: rows, error } = await sb.from('taxis').select('*, profiles(name, phone)').order('status', { ascending: true });
+  if (error) return;
+  staffTaxis = rows || [];
+  renderStaffTaxis();
+}
+function renderStaffTaxis() {
+  const tbody = document.getElementById('staffTaxisTable');
+  if (!tbody) return;
+  if (staffTaxis.length === 0) { tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No taxis registered yet.</td></tr>'; return; }
+  tbody.innerHTML = staffTaxis.map(t => {
+    const stale = t.last_location_update && (Date.now() - new Date(t.last_location_update).getTime()) > 60000;
+    return `<tr>
+      <td>${t.plate} — ${t.model}${t.color ? ' (' + t.color + ')' : ''}</td>
+      <td>${(t.profiles && t.profiles.name) || '—'}${t.profiles && t.profiles.phone ? '<br><span style="color:#8A8578;font-size:11px;">' + t.profiles.phone + '</span>' : ''}</td>
+      <td><span class="badge ${badgeClass(t.status)}">${t.status}</span>${stale ? ' <span style="color:#B0473F;font-size:11px;">(stale)</span>' : ''}</td>
+      <td>${fmtCoord(t.current_lat)}, ${fmtCoord(t.current_lng)}</td>
+      <td>${t.last_location_update ? new Date(t.last_location_update).toLocaleTimeString() : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+</script>
+</body>
+</html>
