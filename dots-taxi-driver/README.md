@@ -117,6 +117,23 @@ and Expo Go cannot receive them for a project it doesn't own.
 the live project; `supabase/migrations/20260903000000_ride_push_pipeline.sql`
 documents the trigger side.
 
+### Verified
+
+`send-ride-push` v2 is deployed and was tested against the live project with
+temporary data (since removed):
+
+| Case | Result |
+| --- | --- |
+| Driver has a token, rider doesn't | `sent: [driver]`, `skipped: [rider has no push token]` |
+| Both have tokens | `sent: [rider, driver]`, tickets index-aligned |
+| Full trigger path (status flip to `matched`) | `pg_net` -> function -> both parties, HTTP 200 |
+| Unregistered token | token cleared automatically |
+| Bad input | 400 missing ride_id / 404 unknown ride / 405 non-POST |
+
+Both sends returned `DeviceNotRegistered` from Expo, which is expected for
+placeholder tokens — that is the path that clears them. A real end-to-end
+delivery still needs a dev build on a physical device.
+
 ## Not built yet
 
 - Map view for pickup / navigation handoff.
