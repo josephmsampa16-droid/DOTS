@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "DOTS Taxi Driver",
+    "slug": "dots-taxi-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.dotseng.taxidriver",
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": ["location", "remote-notification"],
+        "NSLocationWhenInUseUsageDescription": "DOTS Taxi needs your location to match you with nearby ride requests.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "DOTS Taxi needs your location in the background so you can keep receiving ride requests while the app is minimized.",
+        "NSLocationAlwaysUsageDescription": "DOTS Taxi needs your location in the background so you can keep receiving ride requests while the app is minimized."
+      }
+    },
+    "android": {
+      "package": "com.dotseng.taxidriver",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "DOTS Taxi needs your location to match you with nearby ride requests, including while the app is in the background.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ]
+  }
+}
