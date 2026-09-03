@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { supabase } from './lib/supabase';
+import { registerForPushNotifications } from './lib/push';
 import LoginScreen from './screens/LoginScreen';
 import DriverHomeScreen from './screens/DriverHomeScreen';
 import './tasks/locationTask'; // registers the background task on app load
@@ -44,7 +45,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (session) syncPhoneFromMetadata(session);
+    if (!session) return;
+    syncPhoneFromMetadata(session);
+    // Re-registers on every launch: tokens can be rotated by the OS, and this
+    // is also what re-arms a driver whose token was cleared as unregistered.
+    registerForPushNotifications(session.user.id);
   }, [session?.user?.id]);
 
   if (loading) {

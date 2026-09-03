@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
+import { unregisterPushNotifications } from '../lib/push';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
 
 // Matches the ~8s throttle the web driver app uses.
@@ -89,6 +91,23 @@ export default function DriverHomeScreen({ session }) {
       }
     };
   }, [driverId, fetchTaxi, fetchActiveRide]);
+
+  // A push is what reaches the driver when the app is closed, so the tap that
+  // opens the app has to be able to pull the ride in on its own — at that
+  // point the Realtime subscription has only just been re-established and
+  // never saw the event that fired the notification.
+  useEffect(() => {
+    const received = Notifications.addNotificationReceivedListener(() =>
+      fetchActiveRide()
+    );
+    const responded = Notifications.addNotificationResponseReceivedListener(() =>
+      fetchActiveRide()
+    );
+    return () => {
+      received.remove();
+      responded.remove();
+    };
+  }, [fetchActiveRide]);
 
   const startTracking = async () => {
     const fg = await Location.requestForegroundPermissionsAsync();
@@ -256,6 +275,8 @@ export default function DriverHomeScreen({ session }) {
     if (taxi) {
       await supabase.from('taxis').update({ status: 'Offline' }).eq('id', taxi.id);
     }
+    // Must happen before signOut, while RLS still lets us write this profile.
+    await unregisterPushNotifications(driverId);
     await supabase.auth.signOut();
   };
 

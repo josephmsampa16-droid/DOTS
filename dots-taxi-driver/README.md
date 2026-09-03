@@ -72,12 +72,54 @@ Neither web app currently sets `completed`. That matters because
 adds a "Complete ride" button to close that loop. The web driver app has the
 same gap and still needs the equivalent.
 
+## Push notifications
+
+Realtime only delivers while the app is running. A driver whose app is fully
+closed is reached by push instead:
+
+```
+rides.status -> 'matched'
+  -> notify_rider_on_ride_status trigger (AFTER UPDATE OF status)
+    -> net.http_post -> send-ride-push edge function
+      -> Expo -> driver's phone ("New ride request")
+```
+
+Most of this was already live for riders. What was added is the **driver** leg:
+`send-ride-push` previously notified only the rider, so `matched` told the rider
+"driver found" while the driver themselves got nothing.
+
+- `lib/push.js` registers the device and stores the token on
+  `profiles.push_token`, clearing it at logout so a signed-out handset stops
+  receiving requests.
+- Android gets a dedicated `ride-requests` channel at MAX importance, so a
+  request is a heads-up alert with sound rather than a silent tray entry.
+  **Channel importance is fixed when the channel is first created** — changing
+  it in code later has no effect on an already-installed app, so bump the
+  channel id if you ever need to change it.
+- The edge function sends `priority: 'high'` so Android wakes the device
+  instead of batching the notification.
+- Dead tokens (`DeviceNotRegistered`, e.g. after an uninstall) are cleared
+  automatically.
+
+### Required before push works
+
+`getExpoPushTokenAsync` needs an EAS project id, and `app.json` has none yet:
+
+```sh
+npx eas init      # writes extra.eas.projectId into app.json
+```
+
+Until that exists the app logs a warning and runs fine without push. Push also
+needs a dev build and a physical device — tokens are not issued to simulators,
+and Expo Go cannot receive them for a project it doesn't own.
+
+`ride_push_function_url` and `ride_push_anon_key` are already set in Vault on
+the live project; `supabase/migrations/20260903000000_ride_push_pipeline.sql`
+documents the trigger side.
+
 ## Not built yet
 
-- Push notifications for ride requests when the app is fully closed. The
-  foreground service keeps location alive, but a closed app needs
-  `expo-notifications` writing `profiles.push_token` plus a server-side trigger
-  on `rides` (there is already a `notify_rider_on_ride_status` trigger to model
-  it on).
 - Map view for pickup / navigation handoff.
 - Fare, ratings, ride history.
+- Ride request timeout — nothing currently re-matches a ride if the driver
+  never answers, so it sits in `matched` until they do.
