@@ -11,6 +11,10 @@ import { supabase } from './supabase';
 // while the app is closed, which is the whole point of this pipeline.
 export const RIDE_REQUEST_CHANNEL = 'ride-requests';
 
+// The token issued to this device this session, so logout can delete exactly
+// that row rather than every device the driver owns.
+let lastRegisteredToken = null;
+
 // Show ride requests even when the app is already in the foreground —
 // otherwise a driver staring at the app is the only one who doesn't get told.
 Notifications.setNotificationHandler({
@@ -76,22 +80,19 @@ export async function registerForPushNotifications(userId) {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     if (!token) return null;
 
-    // Only write when it actually changed — this runs on every launch, and the
-    // token is stable across restarts.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', userId)
-      .maybeSingle();
+    // push_tokens is keyed by token, one row per device, so a driver signed in
+    // on two handsets gets alerted on both. The upsert also reclaims a token
+    // that used to belong to another account on this device.
+    const { error } = await supabase
+      .from('push_tokens')
+      .upsert(
+        { token, user_id: userId, updated_at: new Date().toISOString() },
+        { onConflict: 'token' }
+      );
+    if (error) console.error('Failed to save push token:', error.message);
 
-    if (profile?.push_token !== token) {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ push_token: token })
-        .eq('id', userId);
-      if (error) console.error('Failed to save push token:', error.message);
-    }
-
+    // Remember it so logout can remove this device's row specifically.
+    lastRegisteredToken = token;
     return token;
   } catch (err) {
     console.error('Push registration failed:', err.message);
@@ -100,14 +101,16 @@ export async function registerForPushNotifications(userId) {
 }
 
 /**
- * Drops the stored token at logout so a signed-out phone stops receiving ride
- * requests — and so the next driver to sign in on this handset doesn't inherit
- * the previous driver's notifications.
+ * Drops this device's token at logout so a signed-out phone stops receiving
+ * ride requests — and so the next driver to sign in on this handset doesn't
+ * inherit the previous driver's notifications. Only this device's row is
+ * removed; the driver's other devices keep working.
  */
-export async function unregisterPushNotifications(userId) {
-  const { error } = await supabase
-    .from('profiles')
-    .update({ push_token: null })
-    .eq('id', userId);
+export async function unregisterPushNotifications() {
+  const token = lastRegisteredToken;
+  if (!token) return;
+
+  const { error } = await supabase.from('push_tokens').delete().eq('token', token);
   if (error) console.error('Failed to clear push token:', error.message);
+  else lastRegisteredToken = null;
 }

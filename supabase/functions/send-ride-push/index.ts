@@ -12,8 +12,14 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // driver ("new ride request"). The driver push is the one that matters most —
 // it's the only thing that reaches a driver whose app is fully closed, where
 // the Realtime subscription isn't running.
+//
+// Tokens live in public.push_tokens (token primary key, many per user), so a
+// driver signed in on two devices is alerted on both.
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
+
+// Expo caps a single push request at 100 messages.
+const EXPO_BATCH_LIMIT = 100;
 
 type Ride = {
   id: string;
@@ -29,6 +35,11 @@ type Recipient = {
   title: string;
   body: string;
 };
+
+// One addressed copy of a message: a recipient paired with one of their
+// devices. Ticket i in Expo's response corresponds to message i, so this is
+// what lets a DeviceNotRegistered map back to the exact token to delete.
+type Addressed = Recipient & { token: string };
 
 // Statuses worth interrupting the rider for. `declined` is deliberately
 // absent: dispatch immediately re-searches, so the rider would get a scary
@@ -121,70 +132,83 @@ Deno.serve(async (req: Request) => {
     return json({ skipped: `status ${ride.status} is not notifiable` });
   }
 
-  const { data: profiles, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, push_token")
-    .in("id", recipients.map((r) => r.userId));
+  const { data: tokenRows, error: tokenError } = await supabase
+    .from("push_tokens")
+    .select("token, user_id")
+    .in("user_id", recipients.map((r) => r.userId));
 
-  if (profileError) return json({ error: profileError.message }, 500);
+  if (tokenError) return json({ error: tokenError.message }, 500);
 
-  const tokensByUser = new Map<string, string>();
-  for (const profile of profiles ?? []) {
-    if (profile.push_token) tokensByUser.set(profile.id, profile.push_token);
+  const tokensByUser = new Map<string, string[]>();
+  for (const row of tokenRows ?? []) {
+    const list = tokensByUser.get(row.user_id) ?? [];
+    list.push(row.token);
+    tokensByUser.set(row.user_id, list);
   }
 
-  // Keep the addressable recipients aligned with the messages we send, so the
-  // ticket at index i still maps back to the right user below.
-  const addressable = recipients.filter((r) => tokensByUser.has(r.userId));
-  const skipped = recipients
-    .filter((r) => !tokensByUser.has(r.userId))
-    .map((r) => `${r.role} has no push token`);
+  // Fan each recipient out across their registered devices.
+  const addressed: Addressed[] = [];
+  const skipped: string[] = [];
+  for (const r of recipients) {
+    const tokens = tokensByUser.get(r.userId) ?? [];
+    if (tokens.length === 0) {
+      skipped.push(`${r.role} has no push token`);
+      continue;
+    }
+    for (const token of tokens) addressed.push({ ...r, token });
+  }
 
-  if (addressable.length === 0) return json({ skipped });
+  if (addressed.length === 0) return json({ skipped });
 
-  const messages = addressable.map((r) => ({
-    to: tokensByUser.get(r.userId),
+  const messages = addressed.map((a) => ({
+    to: a.token,
     sound: "default",
-    title: r.title,
-    body: r.body,
+    title: a.title,
+    body: a.body,
     // Ride requests are time-critical: ask Android to wake the device rather
     // than batching the notification.
     priority: "high",
-    channelId: r.role === "driver" ? "ride-requests" : "default",
-    data: { ride_id: ride.id, status: ride.status, role: r.role },
+    channelId: a.role === "driver" ? "ride-requests" : "default",
+    data: { ride_id: ride.id, status: ride.status, role: a.role },
   }));
 
-  const expoResponse = await fetch(EXPO_PUSH_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "Accept-Encoding": "gzip, deflate",
-    },
-    body: JSON.stringify(messages),
-  });
+  // Collect tickets across batches so index i still lines up with addressed[i].
+  const tickets: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < messages.length; offset += EXPO_BATCH_LIMIT) {
+    const batch = messages.slice(offset, offset + EXPO_BATCH_LIMIT);
+    const expoResponse = await fetch(EXPO_PUSH_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+      },
+      body: JSON.stringify(batch),
+    });
 
-  const expoResult = await expoResponse.json().catch(() => null);
-
-  if (!expoResponse.ok) {
-    return json({ error: "Expo push failed", expo: expoResult }, 502);
+    const expoResult = await expoResponse.json().catch(() => null);
+    if (!expoResponse.ok) {
+      return json({ error: "Expo push failed", expo: expoResult }, 502);
+    }
+    const batchTickets = Array.isArray(expoResult?.data) ? expoResult.data : [];
+    // Keep alignment even if Expo returns a short array for any reason.
+    for (let i = 0; i < batch.length; i++) tickets.push(batchTickets[i] ?? null);
   }
 
   // Expo returns 200 even for per-message errors (e.g. DeviceNotRegistered
-  // after an app uninstall). Clear dead tokens so we stop retrying them.
-  const tickets = Array.isArray(expoResult?.data) ? expoResult.data : [];
-  const deadUserIds = addressable
+  // after an app uninstall). Drop dead tokens so we stop retrying them.
+  const deadTokens = addressed
     .filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered")
-    .map((r) => r.userId);
+    .map((a) => a.token);
 
-  if (deadUserIds.length > 0) {
-    await supabase.from("profiles").update({ push_token: null }).in("id", deadUserIds);
+  if (deadTokens.length > 0) {
+    await supabase.from("push_tokens").delete().in("token", deadTokens);
   }
 
   return json({
-    sent: addressable.map((r) => r.role),
+    sent: addressed.map((a) => a.role),
     skipped,
-    cleared_tokens: deadUserIds.length,
-    expo: expoResult,
+    deleted_tokens: deadTokens.length,
+    expo: { data: tickets },
   });
 });

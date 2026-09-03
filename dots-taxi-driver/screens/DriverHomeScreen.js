@@ -18,6 +18,11 @@ import { LOCATION_TASK_NAME } from '../tasks/locationTask';
 // Matches the ~8s throttle the web driver app uses.
 const LOCATION_INTERVAL_MS = 8000;
 
+// Must match expire_stale_ride_offers(45) on the server. The sweep runs every
+// 15s, so the real cutoff is 45-60s — the countdown is the driver's guide, the
+// server is the authority.
+const OFFER_TIMEOUT_SECONDS = 45;
+
 export default function DriverHomeScreen({ session }) {
   const driverId = session.user.id;
 
@@ -25,6 +30,7 @@ export default function DriverHomeScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [activeRide, setActiveRide] = useState(null);
+  const [secondsLeft, setSecondsLeft] = useState(null);
 
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
@@ -91,6 +97,32 @@ export default function DriverHomeScreen({ session }) {
       }
     };
   }, [driverId, fetchTaxi, fetchActiveRide]);
+
+  // Countdown on an unanswered offer, so the driver can see it is timed.
+  useEffect(() => {
+    if (activeRide?.status !== 'matched' || !activeRide?.matched_at) {
+      setSecondsLeft(null);
+      return;
+    }
+    const deadline =
+      new Date(activeRide.matched_at).getTime() + OFFER_TIMEOUT_SECONDS * 1000;
+    const tick = () =>
+      setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [activeRide?.id, activeRide?.status, activeRide?.matched_at]);
+
+  // Once the offer lapses the server hands the ride to the next driver, but
+  // this driver never sees that as a Realtime event: the subscription filters
+  // on driver_id = me, and the reassigned row no longer matches. Poll until it
+  // clears so the card doesn't sit there claiming a ride we've lost.
+  useEffect(() => {
+    if (secondsLeft !== 0) return;
+    fetchActiveRide();
+    const id = setInterval(fetchActiveRide, 5000);
+    return () => clearInterval(id);
+  }, [secondsLeft, fetchActiveRide]);
 
   // A push is what reaches the driver when the app is closed, so the tap that
   // opens the app has to be able to pull the ride in on its own — at that
@@ -275,10 +307,12 @@ export default function DriverHomeScreen({ session }) {
     if (taxi) {
       await supabase.from('taxis').update({ status: 'Offline' }).eq('id', taxi.id);
     }
-    // Must happen before signOut, while RLS still lets us write this profile.
-    await unregisterPushNotifications(driverId);
+    // Must happen before signOut, while RLS still lets us delete this row.
+    await unregisterPushNotifications();
     await supabase.auth.signOut();
   };
+
+  const offerExpired = secondsLeft === 0;
 
   const pickupLabel =
     activeRide?.pickup_address ||
@@ -357,18 +391,31 @@ export default function DriverHomeScreen({ session }) {
               <Text style={styles.rideDetail}>
                 Drop-off: {activeRide.dest_address || 'Not specified'}
               </Text>
+              <Text style={offerExpired ? styles.expiredText : styles.countdownText}>
+                {offerExpired
+                  ? 'Offer expired — passing to another driver…'
+                  : `Respond within ${secondsLeft ?? OFFER_TIMEOUT_SECONDS}s`}
+              </Text>
               <View style={styles.rideActions}>
                 <TouchableOpacity
-                  style={[styles.rideButton, styles.acceptButton]}
+                  style={[
+                    styles.rideButton,
+                    styles.acceptButton,
+                    offerExpired && styles.disabledButton,
+                  ]}
                   onPress={acceptRide}
-                  disabled={busy}
+                  disabled={busy || offerExpired}
                 >
                   <Text style={styles.rideButtonText}>Accept</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.rideButton, styles.declineButton]}
+                  style={[
+                    styles.rideButton,
+                    styles.declineButton,
+                    offerExpired && styles.disabledButton,
+                  ]}
                   onPress={declineRide}
-                  disabled={busy}
+                  disabled={busy || offerExpired}
                 >
                   <Text style={styles.rideButtonText}>Decline</Text>
                 </TouchableOpacity>
@@ -455,5 +502,8 @@ const styles = StyleSheet.create({
   acceptButton: { backgroundColor: '#2e7d32' },
   declineButton: { backgroundColor: '#555' },
   rideButtonText: { color: '#fff', fontWeight: '600' },
+  countdownText: { color: '#7dd87d', fontSize: 13, fontWeight: '600', marginTop: 4 },
+  expiredText: { color: '#e5a0a0', fontSize: 13, fontWeight: '600', marginTop: 4 },
+  disabledButton: { opacity: 0.4 },
   waitingText: { textAlign: 'center', marginTop: 32, color: '#888' },
 });

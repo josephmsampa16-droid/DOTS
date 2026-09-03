@@ -88,9 +88,10 @@ Most of this was already live for riders. What was added is the **driver** leg:
 `send-ride-push` previously notified only the rider, so `matched` told the rider
 "driver found" while the driver themselves got nothing.
 
-- `lib/push.js` registers the device and stores the token on
-  `profiles.push_token`, clearing it at logout so a signed-out handset stops
-  receiving requests.
+- `lib/push.js` registers the device and stores the token in the
+  `push_tokens` table, deleting this device's row at logout so a signed-out
+  handset stops receiving requests. Tokens are keyed by token, many per user,
+  so a driver signed in on two handsets is alerted on both.
 - Android gets a dedicated `ride-requests` channel at MAX importance, so a
   request is a heads-up alert with sound rather than a silent tray entry.
   **Channel importance is fixed when the channel is first created** — changing
@@ -127,16 +128,41 @@ temporary data (since removed):
 | Driver has a token, rider doesn't | `sent: [driver]`, `skipped: [rider has no push token]` |
 | Both have tokens | `sent: [rider, driver]`, tickets index-aligned |
 | Full trigger path (status flip to `matched`) | `pg_net` -> function -> both parties, HTTP 200 |
-| Unregistered token | token cleared automatically |
+| Driver signed in on two devices | `sent: [rider, driver, driver]` |
+| Unregistered token | row deleted from `push_tokens` automatically |
 | Bad input | 400 missing ride_id / 404 unknown ride / 405 non-POST |
 
 Both sends returned `DeviceNotRegistered` from Expo, which is expected for
 placeholder tokens — that is the path that clears them. A real end-to-end
 delivery still needs a dev build on a physical device.
 
+## Ride offer timeout
+
+An offer the driver never answers used to sit in `matched` forever, and
+`match_nearest_driver` counts any driver holding a matched/accepted ride as
+busy — so one ignored request quietly took that driver out of dispatch and left
+the rider waiting on nothing.
+
+Now every offer has a deadline:
+
+- `rides.offered_driver_ids` records who has already been offered the ride.
+- `expire_stale_ride_offers(45)` re-matches anything still `matched` after 45s
+  to the next-nearest driver, skipping everyone already offered it, and falls to
+  `no_drivers` when there is nobody left.
+- A pg_cron job runs the sweep every 15s, so the real cutoff is 45-60s.
+- The request card counts down and disables itself at zero. The driver gets no
+  Realtime event when the ride moves to someone else — the subscription filters
+  on `driver_id = me` and the reassigned row no longer matches — so the card
+  polls until it clears rather than claiming a ride that is gone.
+
+`offered_driver_ids` also fixes an existing bug: `decline_ride` excluded only
+the immediate decliner, so A-declines -> B-declines -> back to A was possible.
+
+Tuning: change the argument in the cron command
+(`select public.expire_stale_ride_offers(45)`) and `OFFER_TIMEOUT_SECONDS` in
+`screens/DriverHomeScreen.js` together.
+
 ## Not built yet
 
 - Map view for pickup / navigation handoff.
 - Fare, ratings, ride history.
-- Ride request timeout — nothing currently re-matches a ride if the driver
-  never answers, so it sits in `matched` until they do.
