@@ -23,6 +23,7 @@ notifications need one extra step — see below.
 - Foreground location for the pickup point
 - Pickup + drop-off address entry, matching what `dots-taxi-rider.html` writes
   and what the driver app renders (see next section)
+- Live map of the matched driver on their way to you (see below)
 - Request Ride / Cancel Request, writing to `rides`
 - Realtime subscription to the rider's own ride row — status flows through as
   the driver progresses
@@ -102,6 +103,59 @@ Road") often will not resolve, so a failed lookup just leaves the coordinates
 null and the typed text stands on its own. Geocoding never blocks a ride
 request, and `lib/geocoding.js` returns null rather than throwing.
 
+## Live driver map
+
+`components/DriverMap.js` appears under the status card once a ride is
+`matched` or `accepted` and a driver is assigned. It shows the driver, the
+pickup point, and the drop-off (when the address geocoded), and keeps all of
+them in frame as the driver closes in.
+
+The data already existed — nothing new was added for this:
+
+- The driver web app pushes its position into `taxis.current_lat/current_lng`
+  on a throttled `watchPosition`, so the feed is live.
+- The "Riders see taxi of their matched driver" RLS policy makes exactly that
+  one row readable to this rider, and only while the ride is matched or
+  accepted.
+
+The component reads the taxi row and subscribes to Realtime `UPDATE`s on
+`taxis` filtered by the matched `driver_user_id`.
+
+A driver whose last fix is over a minute old is called out as possibly stale
+rather than shown as a confident marker on an old position — a backgrounded
+browser or a dead signal stops the updates without any error. If the driver
+never produced a fix at all, the card says so instead of rendering an empty
+map.
+
+### One fix this depended on
+
+`rides` was never in the `supabase_realtime` publication, so **no
+`postgres_changes` subscription on it had ever fired** — even though all three
+clients subscribe to one:
+
+| client | subscription | effect of the bug |
+|---|---|---|
+| `index.html` | `driver_id=eq.<driver>` | drivers never saw new requests live |
+| `dots-taxi-rider.html` | `rider_id=eq.<rider>` | riders never saw status changes live |
+| this app | `rider_id=eq.<rider>` | same, and the map would never appear |
+
+`taxis` was already published, which is why the staff live-taxi view always
+worked. `supabase/migrations/20260903010000_publish_rides_to_realtime.sql`
+adds `rides` to the publication and sets `replica identity full`. **Already
+applied** to the live project. Everyone had been refreshing by hand.
+
+### Android release builds need a Maps API key
+
+Expo Go supplies its own, so `npx expo start` needs nothing. A standalone
+Android build needs your own key in `app.json`:
+
+```json
+"android": { "config": { "googleMaps": { "apiKey": "<your key>" } } }
+```
+
+iOS uses Apple Maps and needs no key. Deliberately not committed as an empty
+placeholder, because an empty key fails as a blank grey map with no error.
+
 ## Known consideration: who can read push tokens
 
 The existing `profiles` RLS policy "Logged-in users can view profiles" lets any
@@ -120,13 +174,9 @@ apps. Two ways to close it when you want to:
 
 ## Not yet built
 
-- Live map of the driver's position en route. `react-native-maps` is already in
-  `package.json`, and `taxis.current_lat/current_lng` plus the existing
-  "Riders see taxi of their matched driver" RLS policy give you the data —
-  subscribe to Realtime on `taxis` filtered by the matched `driver_id`. The
-  placeholder is marked in `RiderHomeScreen.js`.
 - Fare estimate / payment
 - Ride history screen
+- Driver ETA / route line (the map shows positions, not a route)
 
 ## Schema notes (verified live)
 

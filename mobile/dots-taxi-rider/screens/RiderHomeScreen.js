@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { registerForPushNotificationsAsync } from '../lib/notifications';
 import { describeCoords, lookupAddress } from '../lib/geocoding';
+import DriverMap from '../components/DriverMap';
 
 // Confirmed against the real Supabase schema — rides.status is constrained
 // to exactly these seven values (check constraint on the table):
@@ -260,13 +261,14 @@ export default function RiderHomeScreen({ session }) {
               </TouchableOpacity>
             )}
 
-            {activeRide.driver_id && ['matched', 'accepted'].includes(activeRide.status) && (
-              <Text style={styles.driverNote}>
-                Live driver location tracking / map view goes here (next step).
-              </Text>
-            )}
           </View>
         )}
+
+        {activeRide &&
+          activeRide.driver_id &&
+          ['matched', 'accepted'].includes(activeRide.status) && (
+            <DriverMap ride={activeRide} />
+          )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -335,5 +337,4 @@ const styles = StyleSheet.create({
   },
   cancelButton: { marginTop: 20 },
   cancelButtonText: { color: '#ffb3b3', fontSize: 14 },
-  driverNote: { color: '#cfe0ff', fontSize: 12, marginTop: 16, textAlign: 'center' },
 });
