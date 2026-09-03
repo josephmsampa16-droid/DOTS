@@ -44,11 +44,15 @@ driver changes rides.status
 
 Pieces, all committed at the repo root under `supabase/`:
 
-- `supabase/migrations/20260903000000_rider_push_notifications.sql` — adds
-  `profiles.push_token`, enables `pg_net`, stores the function URL + bearer in
-  Vault, and creates the trigger. **Already applied** to the live project.
-- `supabase/functions/send-ride-push/index.ts` — **already deployed** as
-  `send-ride-push` (verify_jwt on).
+- `supabase/migrations/20260903000000_rider_push_notifications.sql` — enables
+  `pg_net`, stores the function URL + bearer in Vault, and creates the trigger.
+- `supabase/migrations/20260903020000_move_push_tokens_out_of_profiles.sql` —
+  creates `public.push_tokens` and drops the original `profiles.push_token`
+  column (see "Where push tokens live" below).
+
+Both **already applied** to the live project, along with
+`supabase/functions/send-ride-push/index.ts`, **already deployed** as
+`send-ride-push` (verify_jwt on).
 
 Pushes are sent for `matched`, `accepted`, `no_drivers` and `completed`.
 `declined` is skipped on purpose (dispatch immediately re-searches, so a push
@@ -58,8 +62,9 @@ action).
 The trigger only passes a ride id. The Edge Function re-reads the ride's real
 status and the rider's token with the service role key, so a caller holding
 nothing but the public anon key cannot forge the message text or push to a
-token of their choosing. Dead tokens (`DeviceNotRegistered`, e.g. after an
-uninstall) are cleared from `profiles.push_token` automatically.
+token of their choosing. A rider with more than one device gets one
+message per device, and dead tokens (`DeviceNotRegistered`, e.g. after an
+uninstall) are deleted automatically.
 
 `net.http_post` only queues the request, so a slow or unreachable function
 never blocks the driver's status update.
@@ -156,21 +161,41 @@ Android build needs your own key in `app.json`:
 iOS uses Apple Maps and needs no key. Deliberately not committed as an empty
 placeholder, because an empty key fails as a blank grey map with no error.
 
-## Known consideration: who can read push tokens
+## Where push tokens live
 
-The existing `profiles` RLS policy "Logged-in users can view profiles" lets any
-authenticated user select every profile row — which now includes `push_token`.
-An Expo push token is enough to send that device arbitrary notifications
-through Expo's public API, so a signed-up user could spoof a "Your driver is
-here" alert at another user.
+An Expo push token is a bearer credential: anyone holding it can send that
+device arbitrary notifications through Expo's public API. Tokens therefore do
+**not** live on `profiles`, whose "Logged-in users can view profiles" policy
+grants every signed-in user SELECT on every profile row — any signed-up user
+could have read another's token and spoofed a "Your driver is here" alert.
 
-This was not changed here because narrowing it touches the live driver and web
-apps. Two ways to close it when you want to:
+They live in `public.push_tokens` instead, one row per device, with RLS scoped
+to the owning user:
 
-- Move tokens to a `push_tokens` table with an own-row-only RLS policy (the
-  Edge Function reads it with the service role key either way), or
-- Replace the blanket-select policy with one scoped to profiles the caller
-  actually needs to see.
+| who | can do |
+|---|---|
+| the owner | select / insert / update / delete their own rows |
+| any other signed-in user | nothing — zero rows, and inserts are rejected |
+| `send-ride-push` | reads all rows via the service role key, which bypasses RLS |
+
+Column-level `REVOKE` was the obvious-looking fix and does not work: a
+table-level SELECT grant overrides per-column revokes, so closing it that way
+would mean enumerating every other column and re-granting them forever. RLS is
+row-level, which is exactly the shape of this problem, so the token moved to a
+row of its own.
+
+The token itself is the primary key, so re-registering a device updates its row
+rather than piling up duplicates, and a phone that changes hands is reassigned.
+Signing out deletes the device's row, so a shared or resold phone stops
+receiving the previous rider's notifications.
+
+The broad `profiles` select policy is unchanged — it is what lets a rider see
+their driver's name and staff see the fleet — but it no longer exposes a
+credential.
+
+Verified against the live project in rolled-back transactions: a second signed-in
+rider sees zero token rows, and their attempt to register a token under someone
+else's user id is rejected outright by RLS (`42501`).
 
 ## Not yet built
 

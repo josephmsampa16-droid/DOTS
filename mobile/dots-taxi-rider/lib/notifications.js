@@ -24,9 +24,12 @@ function getProjectId() {
   );
 }
 
-// Stores the Expo push token on profiles.push_token. The `notify_rider_on_ride_status`
-// trigger reads it and calls the send-ride-push Edge Function whenever the
-// rider's ride is matched / accepted / completed.
+// Stores the Expo push token in public.push_tokens, whose RLS scopes each row
+// to its owner — a push token is a bearer credential, so it must not sit in a
+// table every signed-in user can read. The `notify_rider_on_ride_status`
+// trigger calls the send-ride-push Edge Function, which reads these with the
+// service role key whenever the rider's ride is matched / accepted /
+// completed.
 export async function registerForPushNotificationsAsync(userId) {
   if (!Device.isDevice) return; // push tokens don't work on simulators
 
@@ -60,13 +63,29 @@ export async function registerForPushNotificationsAsync(userId) {
   try {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     if (userId && token) {
+      // The token is the primary key, so re-registering the same device
+      // updates its row rather than piling up duplicates.
       const { error } = await supabase
-        .from('profiles')
-        .update({ push_token: token })
-        .eq('id', userId);
+        .from('push_tokens')
+        .upsert({ token, user_id: userId, updated_at: new Date().toISOString() }, {
+          onConflict: 'token',
+        });
       if (error) console.warn('Could not save push token:', error.message);
     }
   } catch (err) {
     console.warn('Could not get Expo push token:', err.message);
+  }
+}
+
+// Called before signing out, so a shared or resold phone stops receiving the
+// previous rider's ride notifications. RLS already limits this to the caller's
+// own rows; failure is non-fatal because sign-out must not be blocked.
+export async function unregisterPushNotificationsAsync(userId) {
+  if (!userId) return;
+  try {
+    const { error } = await supabase.from('push_tokens').delete().eq('user_id', userId);
+    if (error) console.warn('Could not clear push token:', error.message);
+  } catch (err) {
+    console.warn('Could not clear push token:', err.message);
   }
 }

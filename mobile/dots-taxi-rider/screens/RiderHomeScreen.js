@@ -13,7 +13,10 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
-import { registerForPushNotificationsAsync } from '../lib/notifications';
+import {
+  registerForPushNotificationsAsync,
+  unregisterPushNotificationsAsync,
+} from '../lib/notifications';
 import { describeCoords, lookupAddress } from '../lib/geocoding';
 import DriverMap from '../components/DriverMap';
 
@@ -174,6 +177,9 @@ export default function RiderHomeScreen({ session }) {
   };
 
   const handleLogout = async () => {
+    // Drop this device's token first — after signOut the RLS policy no longer
+    // matches, so the delete would silently affect nothing.
+    await unregisterPushNotificationsAsync(session.user.id);
     await supabase.auth.signOut();
   };
 

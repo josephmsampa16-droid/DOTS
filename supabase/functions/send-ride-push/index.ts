@@ -5,9 +5,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //
 // Called by the `notify_rider_on_ride_status` trigger on public.rides (see
 // supabase/migrations). The caller only supplies a ride id — the status and
-// the destination token are re-read here with the service role key, so a
+// the destination tokens are re-read here with the service role key, so a
 // caller holding nothing but the public anon key cannot forge the message
 // text or push to an arbitrary token.
+//
+// Tokens live in public.push_tokens, whose RLS scopes each row to its owner.
+// The service role key bypasses that, which is why this function can read a
+// rider's tokens while no other signed-in user can.
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
 
@@ -75,14 +79,16 @@ Deno.serve(async (req: Request) => {
   const message = MESSAGES[ride.status];
   if (!message) return json({ skipped: `status ${ride.status} is not notifiable` });
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("push_token")
-    .eq("id", ride.rider_id)
-    .maybeSingle();
+  // A rider may have more than one device registered.
+  const { data: tokenRows, error: tokenError } = await supabase
+    .from("push_tokens")
+    .select("token")
+    .eq("user_id", ride.rider_id);
 
-  if (profileError) return json({ error: profileError.message }, 500);
-  if (!profile?.push_token) return json({ skipped: "rider has no push token" });
+  if (tokenError) return json({ error: tokenError.message }, 500);
+
+  const tokens = (tokenRows ?? []).map((row) => row.token).filter(Boolean);
+  if (tokens.length === 0) return json({ skipped: "rider has no push token" });
 
   const expoResponse = await fetch(EXPO_PUSH_ENDPOINT, {
     method: "POST",
@@ -91,13 +97,16 @@ Deno.serve(async (req: Request) => {
       Accept: "application/json",
       "Accept-Encoding": "gzip, deflate",
     },
-    body: JSON.stringify({
-      to: profile.push_token,
-      sound: "default",
-      title: message.title,
-      body: message.body,
-      data: { ride_id: ride.id, status: ride.status },
-    }),
+    // Expo accepts a batch; one message per registered device.
+    body: JSON.stringify(
+      tokens.map((token) => ({
+        to: token,
+        sound: "default",
+        title: message.title,
+        body: message.body,
+        data: { ride_id: ride.id, status: ride.status },
+      })),
+    ),
   });
 
   const expoResult = await expoResponse.json().catch(() => null);
@@ -107,11 +116,18 @@ Deno.serve(async (req: Request) => {
   }
 
   // Expo returns 200 even for per-message errors (e.g. DeviceNotRegistered
-  // after an app uninstall). Clear the dead token so we stop retrying it.
-  const ticket = expoResult?.data;
-  if (ticket?.status === "error" && ticket?.details?.error === "DeviceNotRegistered") {
-    await supabase.from("profiles").update({ push_token: null }).eq("id", ride.rider_id);
+  // after an app uninstall). Tickets come back in request order, so drop the
+  // dead tokens and stop retrying them.
+  const tickets = Array.isArray(expoResult?.data) ? expoResult.data : [];
+  const deadTokens = tokens.filter(
+    (_token, i) =>
+      tickets[i]?.status === "error" &&
+      tickets[i]?.details?.error === "DeviceNotRegistered",
+  );
+
+  if (deadTokens.length > 0) {
+    await supabase.from("push_tokens").delete().in("token", deadTokens);
   }
 
-  return json({ sent: true, expo: expoResult });
+  return json({ sent: tokens.length - deadTokens.length, expo: expoResult });
 });
