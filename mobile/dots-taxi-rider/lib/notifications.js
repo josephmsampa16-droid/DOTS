@@ -5,15 +5,18 @@ import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
+  // shouldShowAlert was deprecated and split in two: SDK 57 requires
+  // shouldShowBanner (the heads-up alert) and shouldShowList (the
+  // notification centre entry) explicitly.
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
 
-// Expo SDK 51 requires an explicit EAS project id when asking for a push
-// token. It comes from app.json (expo.extra.eas.projectId) once the project
+// Expo requires an explicit EAS project id when asking for a push token. It comes from app.json (expo.extra.eas.projectId) once the project
 // has been linked with `eas init` — until then getExpoPushTokenAsync() throws,
 // so we bail out early with a readable reason instead of crashing the screen.
 function getProjectId() {

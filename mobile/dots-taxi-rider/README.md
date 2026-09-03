@@ -14,6 +14,12 @@ the same one already embedded in `index.html` and `dots-taxi-rider.html`, so
 this is no wider an exposure than the web apps already carry. Everything is
 gated by RLS.
 
+The project targets **Expo SDK 57**, which is what the Expo Go in the app
+stores runs, so scanning the QR code works with a stock Expo Go install. Expo
+Go only ever supports the current SDK — the original scaffold pinned SDK 51 and
+would have been rejected outright with "Project is incompatible with this
+version of Expo Go."
+
 Expo Go is enough for the core ride flow (no background location needed). Push
 notifications need one extra step — see below.
 
@@ -71,7 +77,7 @@ never blocks the driver's status update.
 
 ### The one thing left to do: an EAS project id
 
-Expo SDK 51 requires an EAS project id before it will issue a push token. Run
+Expo requires an EAS project id before it will issue a push token. Run
 `eas init` in this folder and add the result to `app.json`:
 
 ```json
