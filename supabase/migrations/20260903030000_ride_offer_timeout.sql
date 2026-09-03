@@ -110,7 +110,7 @@ $function$;
 
 -- Sweep. pg_cron 1.5+ accepts sub-minute intervals; every 15s bounds the
 -- actual timeout to roughly 45-60s. To retune, change the argument here and
--- OFFER_TIMEOUT_SECONDS in dots-taxi-driver/screens/DriverHomeScreen.js.
+-- OFFER_TIMEOUT_SECONDS in mobile/dots-taxi-driver/screens/DriverHomeScreen.js.
 create extension if not exists pg_cron;
 
 select cron.unschedule('expire-stale-ride-offers')

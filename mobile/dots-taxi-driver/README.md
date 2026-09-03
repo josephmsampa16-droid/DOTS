@@ -1,8 +1,12 @@
-# DOTS Taxi Driver — React Native (Expo)
+# DOTS Taxi Driver — React Native (Expo SDK 57)
 
-Native driver app for the DOTS taxi system. It talks to the **same Supabase
-backend as the web apps** (`dots-bookings`, ref `rtjzcqdxprrvewtbxgsi`) — same
-tables, same RLS, same Realtime. No backend changes.
+Native driver app for the DOTS taxi system. Sibling of `mobile/dots-taxi-rider`;
+the two share the `push_tokens` table and the `send-ride-push` Edge Function.
+
+It talks to the **same Supabase backend as the web apps** (`dots-bookings`, ref
+`rtjzcqdxprrvewtbxgsi`) — same tables, same RLS, same Realtime. The only schema
+it adds is the ride offer timeout
+(`supabase/migrations/20260903030000_ride_offer_timeout.sql`).
 
 The reason this exists: the web driver app has to stay open in the foreground to
 keep pushing location, because mobile browsers throttle `watchPosition` when
@@ -89,9 +93,12 @@ Most of this was already live for riders. What was added is the **driver** leg:
 "driver found" while the driver themselves got nothing.
 
 - `lib/push.js` registers the device and stores the token in the
-  `push_tokens` table, deleting this device's row at logout so a signed-out
-  handset stops receiving requests. Tokens are keyed by token, many per user,
-  so a driver signed in on two handsets is alerted on both.
+  `push_tokens` table, deleting **this device's** row at logout so a signed-out
+  handset stops receiving requests while the driver's other devices keep
+  working. Tokens are keyed by token, many per user, so a driver signed in on
+  two handsets is alerted on both. (The rider app's
+  `unregisterPushNotificationsAsync` deletes every row for the user instead, so
+  signing out of one phone silences all of them — worth aligning.)
 - Android gets a dedicated `ride-requests` channel at MAX importance, so a
   request is a heads-up alert with sound rather than a silent tray entry.
   **Channel importance is fixed when the channel is first created** — changing

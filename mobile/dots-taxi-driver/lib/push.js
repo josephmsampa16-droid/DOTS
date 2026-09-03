@@ -18,8 +18,12 @@ let lastRegisteredToken = null;
 // Show ride requests even when the app is already in the foreground —
 // otherwise a driver staring at the app is the only one who doesn't get told.
 Notifications.setNotificationHandler({
+  // SDK 57 split the deprecated shouldShowAlert into shouldShowBanner (the
+  // heads-up alert) and shouldShowList (the notification centre entry); both
+  // must be set explicitly now.
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),

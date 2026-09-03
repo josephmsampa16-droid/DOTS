@@ -13,8 +13,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // it's the only thing that reaches a driver whose app is fully closed, where
 // the Realtime subscription isn't running.
 //
-// Tokens live in public.push_tokens (token primary key, many per user), so a
-// driver signed in on two devices is alerted on both.
+// Tokens live in public.push_tokens, whose RLS scopes each row to its owner.
+// The service role key bypasses that, which is why this function can read a
+// rider's or driver's tokens while no other signed-in user can. The token is
+// the primary key, so a user may have several rows — a driver signed in on two
+// devices is alerted on both.
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
 
@@ -198,7 +201,11 @@ Deno.serve(async (req: Request) => {
   // Expo returns 200 even for per-message errors (e.g. DeviceNotRegistered
   // after an app uninstall). Drop dead tokens so we stop retrying them.
   const deadTokens = addressed
-    .filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered")
+    .filter(
+      (_, i) =>
+        tickets[i]?.status === "error" &&
+        tickets[i]?.details?.error === "DeviceNotRegistered",
+    )
     .map((a) => a.token);
 
   if (deadTokens.length > 0) {
