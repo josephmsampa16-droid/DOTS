@@ -21,10 +21,12 @@ notifications need one extra step — see below.
 
 - Email/password auth (`intended_role: 'Rider'`, matches the `handle_new_user` trigger)
 - Foreground location for the pickup point
+- Pickup + drop-off address entry, matching what `dots-taxi-rider.html` writes
+  and what the driver app renders (see next section)
 - Request Ride / Cancel Request, writing to `rides`
 - Realtime subscription to the rider's own ride row — status flows through as
   the driver progresses
-- Push notifications, end to end (see next section)
+- Push notifications, end to end (see below)
 
 ## Push notifications
 
@@ -74,6 +76,32 @@ Until then `registerForPushNotificationsAsync` logs a warning and returns —
 the rest of the app works, tokens just are not collected. Push tokens are also
 never issued on a simulator; test on a physical device.
 
+## Addresses
+
+Deliberately the same contract as the rider web app, so both clients behave
+identically and the driver app needs no changes:
+
+- **Pickup address** — required free text. The exact pickup point is still the
+  device's GPS fix (`pickup_lat/pickup_lng`); the text is what the driver reads.
+- **Drop-off address** — optional free text, stored in `dest_address`.
+
+The driver app already renders both (`index.html` shows "Pickup: … / Drop-off:
+…" on a matched ride), so nothing on that side needed touching.
+
+Two things mobile does that the web app can't:
+
+- The pickup field is **prefilled** by reverse-geocoding the GPS fix, so the
+  rider usually just confirms it instead of typing. If they have already typed
+  something, the prefill leaves it alone.
+- The drop-off text is **forward-geocoded** to fill `dest_lat/dest_lng`, which
+  the web app leaves null. The live driver map will want those.
+
+Both use `expo-location`'s built-in OS geocoder — no API key, no billing. Both
+are strictly best-effort: informal Lusaka addresses ("Plot 42, off Great East
+Road") often will not resolve, so a failed lookup just leaves the coordinates
+null and the typed text stands on its own. Geocoding never blocks a ride
+request, and `lib/geocoding.js` returns null rather than throwing.
+
 ## Known consideration: who can read push tokens
 
 The existing `profiles` RLS policy "Logged-in users can view profiles" lets any
@@ -97,7 +125,6 @@ apps. Two ways to close it when you want to:
   "Riders see taxi of their matched driver" RLS policy give you the data —
   subscribe to Realtime on `taxis` filtered by the matched `driver_id`. The
   placeholder is marked in `RiderHomeScreen.js`.
-- Destination entry (`rides.dest_lat/dest_lng/dest_address` exist but are unused)
 - Fare estimate / payment
 - Ride history screen
 

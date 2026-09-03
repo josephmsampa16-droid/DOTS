@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Alert,
   ActivityIndicator,
@@ -10,6 +14,7 @@ import {
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { registerForPushNotificationsAsync } from '../lib/notifications';
+import { describeCoords, lookupAddress } from '../lib/geocoding';
 
 // Confirmed against the real Supabase schema — rides.status is constrained
 // to exactly these seven values (check constraint on the table):
@@ -23,9 +28,16 @@ const STATUS_LABELS = {
   cancelled: 'Ride cancelled',
 };
 
+const TERMINAL_STATUSES = ['completed', 'no_drivers', 'cancelled'];
+
 export default function RiderHomeScreen({ session }) {
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
+  // Free-text addresses, matching what dots-taxi-rider.html writes: pickup is
+  // required, drop-off is optional. The driver app renders both.
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [destAddress, setDestAddress] = useState('');
+  const [prefillingPickup, setPrefillingPickup] = useState(false);
   const [activeRide, setActiveRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
@@ -51,6 +63,15 @@ export default function RiderHomeScreen({ session }) {
     }
     const pos = await Location.getCurrentPositionAsync({});
     setLocation(pos.coords);
+
+    // Prefill the pickup field so the rider usually just confirms it instead
+    // of typing. Leaves the field alone if they already started editing.
+    setPrefillingPickup(true);
+    const described = await describeCoords(pos.coords);
+    setPrefillingPickup(false);
+    if (described) {
+      setPickupAddress((current) => (current.trim() ? current : described));
+    }
   };
 
   const checkForActiveRide = async () => {
@@ -80,7 +101,7 @@ export default function RiderHomeScreen({ session }) {
         (payload) => {
           if (payload.eventType === 'DELETE') return;
           const ride = payload.new;
-          if (['completed', 'no_drivers', 'cancelled'].includes(ride.status)) {
+          if (TERMINAL_STATUSES.includes(ride.status)) {
             setActiveRide(ride);
             setTimeout(() => setActiveRide(null), 4000);
           } else {
@@ -96,8 +117,20 @@ export default function RiderHomeScreen({ session }) {
       Alert.alert('Location needed', 'Waiting for your location — try again in a moment.');
       return;
     }
+    const pickup = pickupAddress.trim();
+    const destination = destAddress.trim();
+    if (!pickup) {
+      Alert.alert('Pickup needed', 'Enter a pickup address so your driver can find you.');
+      return;
+    }
+
     setBusy(true);
     try {
+      // Best-effort only: dest_lat/dest_lng stay null when the geocoder can't
+      // place the address, which is common for informal Zambian addresses.
+      // The driver still sees the text the rider typed.
+      const destCoords = destination ? await lookupAddress(destination) : null;
+
       const { data, error } = await supabase
         .from('rides')
         .insert({
@@ -105,6 +138,10 @@ export default function RiderHomeScreen({ session }) {
           status: 'requested',
           pickup_lat: location.latitude,
           pickup_lng: location.longitude,
+          pickup_address: pickup,
+          dest_address: destination || null,
+          dest_lat: destCoords?.latitude ?? null,
+          dest_lng: destCoords?.longitude ?? null,
         })
         .select()
         .single();
@@ -139,64 +176,105 @@ export default function RiderHomeScreen({ session }) {
     await supabase.auth.signOut();
   };
 
+  const routeLine = activeRide
+    ? 'From ' +
+      (activeRide.pickup_address || 'your location') +
+      (activeRide.dest_address ? ' to ' + activeRide.dest_address : '')
+    : null;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>DOTS Taxi</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logout}>Log out</Text>
-        </TouchableOpacity>
-      </View>
-
-      {locationError && <Text style={styles.errorText}>{locationError}</Text>}
-
-      {!activeRide && (
-        <View style={styles.requestCard}>
-          <Text style={styles.requestTitle}>Ready to go?</Text>
-          <Text style={styles.requestSubtitle}>
-            {location ? 'Pickup: your current location' : 'Getting your location…'}
-          </Text>
-          <TouchableOpacity
-            style={[styles.button, !location && styles.buttonDisabled]}
-            onPress={requestRide}
-            disabled={!location || busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Request Ride</Text>
-            )}
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>DOTS Taxi</Text>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={styles.logout}>Log out</Text>
           </TouchableOpacity>
         </View>
-      )}
 
-      {activeRide && (
-        <View style={styles.statusCard}>
-          <Text style={styles.statusText}>
-            {STATUS_LABELS[activeRide.status] || activeRide.status}
-          </Text>
+        {locationError && <Text style={styles.errorText}>{locationError}</Text>}
 
-          {activeRide.status === 'requested' && <ActivityIndicator style={{ marginTop: 12 }} />}
+        {!activeRide && (
+          <View style={styles.requestCard}>
+            <Text style={styles.requestTitle}>Ready to go?</Text>
 
-          {['requested'].includes(activeRide.status) && (
-            <TouchableOpacity style={styles.cancelButton} onPress={cancelRide} disabled={busy}>
-              <Text style={styles.cancelButtonText}>Cancel Request</Text>
-            </TouchableOpacity>
-          )}
+            <Text style={styles.label}>Pickup address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Manda Hill, Lusaka"
+              value={pickupAddress}
+              onChangeText={setPickupAddress}
+            />
 
-          {activeRide.driver_id && ['matched', 'accepted'].includes(activeRide.status) && (
-            <Text style={styles.driverNote}>
-              Live driver location tracking / map view goes here (next step).
+            <Text style={styles.label}>Drop-off address (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Levy Junction, Lusaka"
+              value={destAddress}
+              onChangeText={setDestAddress}
+              returnKeyType="done"
+            />
+
+            <Text style={styles.requestSubtitle}>
+              {!location
+                ? 'Getting your location…'
+                : prefillingPickup
+                ? 'Looking up your address…'
+                : "We'll use your current location as the exact pickup point."}
             </Text>
-          )}
-        </View>
-      )}
-    </View>
+
+            <TouchableOpacity
+              style={[styles.button, !location && styles.buttonDisabled]}
+              onPress={requestRide}
+              disabled={!location || busy}
+            >
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Request Ride</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeRide && (
+          <View style={styles.statusCard}>
+            <Text style={styles.statusText}>
+              {STATUS_LABELS[activeRide.status] || activeRide.status}
+            </Text>
+
+            {routeLine && <Text style={styles.routeText}>{routeLine}</Text>}
+
+            {activeRide.status === 'requested' && <ActivityIndicator style={{ marginTop: 12 }} />}
+
+            {['requested', 'matched', 'no_drivers'].includes(activeRide.status) && (
+              <TouchableOpacity style={styles.cancelButton} onPress={cancelRide} disabled={busy}>
+                <Text style={styles.cancelButtonText}>Cancel Request</Text>
+              </TouchableOpacity>
+            )}
+
+            {activeRide.driver_id && ['matched', 'accepted'].includes(activeRide.status) && (
+              <Text style={styles.driverNote}>
+                Live driver location tracking / map view goes here (next step).
+              </Text>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
+  flex: { flex: 1, backgroundColor: '#fff' },
+  container: { padding: 20, paddingBottom: 40 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -211,10 +289,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f7fb',
     borderRadius: 12,
     padding: 20,
-    marginTop: 40,
+    marginTop: 24,
   },
-  requestTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
-  requestSubtitle: { color: '#666', marginBottom: 20 },
+  requestTitle: { fontSize: 20, fontWeight: '700', marginBottom: 16 },
+  label: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8A8578',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  requestSubtitle: { color: '#666', marginBottom: 20, fontSize: 13 },
   button: {
     backgroundColor: '#0a3d91',
     borderRadius: 8,
@@ -231,6 +326,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statusText: { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center' },
+  routeText: {
+    color: '#cfe0ff',
+    fontSize: 13,
+    marginTop: 10,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   cancelButton: { marginTop: 20 },
   cancelButtonText: { color: '#ffb3b3', fontSize: 14 },
   driverNote: { color: '#cfe0ff', fontSize: 12, marginTop: 16, textAlign: 'center' },
