@@ -59,8 +59,10 @@ const DRIVER_ON_MAP_STATUSES = ['matched', 'accepted', 'arrived', 'in_progress']
 export default function RiderHomeScreen({ session }) {
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
-  // Free-text addresses, matching what dots-taxi-rider.html writes: pickup is
-  // required, drop-off is optional. The driver app renders both.
+  // Free-text addresses. Both are required: without a destination there is no
+  // distance, so no fare — and the ride would reach the driver unpriced while
+  // still costing them a token. rides_require_destination enforces the same
+  // rule in the database, for anything that does not come through this screen.
   const [pickupAddress, setPickupAddress] = useState('');
   const [destAddress, setDestAddress] = useState('');
   const [prefillingPickup, setPrefillingPickup] = useState(false);
@@ -282,6 +284,14 @@ export default function RiderHomeScreen({ session }) {
       Alert.alert('Pickup needed', 'Enter a pickup address so your driver can find you.');
       return;
     }
+    if (!destCoords && !destination) {
+      Alert.alert(
+        'Where are you going?',
+        'Enter a drop-off address, or set it on the map. The fare is worked out ' +
+          'from the distance, so we need to know where you are heading.'
+      );
+      return;
+    }
 
     setBusy(true);
     try {
@@ -292,6 +302,19 @@ export default function RiderHomeScreen({ session }) {
       const resolvedDest =
         destCoords ?? (destination ? await lookupAddress(destination, location) : null);
 
+      // Typed text the geocoder cannot place would insert a null destination,
+      // which the database now refuses. Say so in words the rider can act on
+      // rather than letting the constraint speak for us.
+      if (!resolvedDest) {
+        Alert.alert(
+          "We couldn't find that place",
+          `"${destination}" did not match anywhere we recognise. Check the ` +
+            'spelling, or tap "Set destination on map" to point at it.'
+        );
+        setBusy(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('rides')
         .insert({
@@ -301,8 +324,8 @@ export default function RiderHomeScreen({ session }) {
           pickup_lng: location.longitude,
           pickup_address: pickup,
           dest_address: destination || null,
-          dest_lat: resolvedDest?.latitude ?? null,
-          dest_lng: resolvedDest?.longitude ?? null,
+          dest_lat: resolvedDest.latitude,
+          dest_lng: resolvedDest.longitude,
         })
         .select()
         .single();
@@ -342,6 +365,11 @@ export default function RiderHomeScreen({ session }) {
     await supabase.auth.signOut();
   };
 
+  // A ride needs somewhere to go before it can be priced, so the button stays
+  // dimmed until the rider has said where. requestRide() checks again, since a
+  // disabled button is a courtesy and not a guarantee.
+  const canRequest = Boolean(location) && Boolean(destCoords || destAddress.trim());
+
   const routeLine = activeRide
     ? 'From ' +
       (activeRide.pickup_address || 'your location') +
@@ -379,7 +407,7 @@ export default function RiderHomeScreen({ session }) {
               onChangeText={setPickupAddress}
             />
 
-            <Text style={styles.label}>Drop-off address (optional)</Text>
+            <Text style={styles.label}>Drop-off address</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Levy Junction, Lusaka"
@@ -460,9 +488,9 @@ export default function RiderHomeScreen({ session }) {
             </Text>
 
             <TouchableOpacity
-              style={[styles.button, !location && styles.buttonDisabled]}
+              style={[styles.button, !canRequest && styles.buttonDisabled]}
               onPress={requestRide}
-              disabled={!location || busy}
+              disabled={!canRequest || busy}
             >
               {busy ? (
                 <ActivityIndicator color="#fff" />
