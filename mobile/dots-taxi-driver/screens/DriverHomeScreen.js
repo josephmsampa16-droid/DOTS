@@ -31,12 +31,14 @@ export default function DriverHomeScreen({ session }) {
   const [busy, setBusy] = useState(false);
   const [activeRide, setActiveRide] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
+  const [backgroundTracking, setBackgroundTracking] = useState(false);
 
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [color, setColor] = useState('');
 
   const channelRef = useRef(null);
+  const foregroundWatchRef = useRef(null);
 
   const isOnline = taxi?.status === 'Online';
 
@@ -141,57 +143,108 @@ export default function DriverHomeScreen({ session }) {
     };
   }, [fetchActiveRide]);
 
+  // Writes a fix straight to this driver's taxi row. Used by the foreground
+  // watcher; the background task does the same write from tasks/locationTask.
+  const pushLocation = useCallback(
+    async ({ latitude, longitude }) => {
+      await supabase
+        .from('taxis')
+        .update({
+          current_lat: latitude,
+          current_lng: longitude,
+          last_location_update: new Date().toISOString(),
+        })
+        .eq('driver_user_id', driverId);
+    },
+    [driverId]
+  );
+
+  // Fallback for when background location isn't available: keep pushing fixes
+  // while the app is open. Worse than the background task — the driver has to
+  // keep the app in front — but far better than refusing to go Online at all.
+  const startForegroundWatch = async () => {
+    if (foregroundWatchRef.current) return;
+    foregroundWatchRef.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: LOCATION_INTERVAL_MS,
+        distanceInterval: 15,
+      },
+      (loc) => pushLocation(loc.coords)
+    );
+  };
+
   const startTracking = async () => {
     const fg = await Location.requestForegroundPermissionsAsync();
     if (fg.status !== 'granted') {
       Alert.alert(
         'Location needed',
-        'Foreground location permission is required to go online.'
-      );
-      return null;
-    }
-
-    const bg = await Location.requestBackgroundPermissionsAsync();
-    if (bg.status !== 'granted') {
-      Alert.alert(
-        'Background location needed',
-        'Please allow "Always" location access so ride requests keep coming in while the app is in the background.'
+        'Location permission is required to go online.'
       );
       return null;
     }
 
     // match_nearest_driver() skips taxis with a null current_lat/current_lng,
     // so we need a fix in hand *before* flipping to Online — otherwise the
-    // driver sits unmatchable until the first background update lands.
+    // driver sits unmatchable until the first update lands.
     const position = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
 
-    const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
-      LOCATION_TASK_NAME
-    );
-    if (!alreadyStarted) {
-      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.High,
-        timeInterval: LOCATION_INTERVAL_MS,
-        distanceInterval: 15,
-        showsBackgroundLocationIndicator: true,
-        foregroundService: {
-          notificationTitle: 'DOTS Taxi',
-          notificationBody: "You're online and receiving ride requests.",
-        },
-      });
+    // Background location is best-effort, never a gate. Two ways it can be
+    // unavailable: the driver picks "While Using" rather than "Always", or the
+    // host app has no Always-usage string in its Info.plist and the request
+    // throws ERR_LOCATION_INFO_PLIST — which is what Expo Go does, since it
+    // cannot see this project's app.json. Either way the driver still works,
+    // they just have to keep the app open.
+    let background = false;
+    try {
+      const bg = await Location.requestBackgroundPermissionsAsync();
+      background = bg.status === 'granted';
+    } catch {
+      background = false;
     }
+
+    if (background) {
+      const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
+        LOCATION_TASK_NAME
+      );
+      if (!alreadyStarted) {
+        await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+          accuracy: Location.Accuracy.High,
+          timeInterval: LOCATION_INTERVAL_MS,
+          distanceInterval: 15,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: 'DOTS Taxi',
+            notificationBody: "You're online and receiving ride requests.",
+          },
+        });
+      }
+    } else {
+      await startForegroundWatch();
+      Alert.alert(
+        'Keep the app open',
+        'Background location is not available, so you will only receive ride requests while this app is open and on screen.'
+      );
+    }
+
+    setBackgroundTracking(background);
     return position.coords;
   };
 
   const stopTracking = async () => {
+    if (foregroundWatchRef.current) {
+      foregroundWatchRef.current.remove();
+      foregroundWatchRef.current = null;
+    }
     const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
       LOCATION_TASK_NAME
     );
     if (alreadyStarted) {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
     }
+    setBackgroundTracking(false);
   };
 
   const toggleOnline = async (goingOnline) => {
@@ -382,6 +435,14 @@ export default function DriverHomeScreen({ session }) {
             <Switch value={isOnline} onValueChange={toggleOnline} disabled={busy} />
           </View>
 
+          {isOnline && (
+            <Text style={styles.trackingNote}>
+              {backgroundTracking
+                ? 'Background location on — requests reach you with the app closed.'
+                : 'Foreground only — keep this app open to receive requests.'}
+            </Text>
+          )}
+
           {busy && <ActivityIndicator style={{ marginTop: 12 }} />}
 
           {activeRide?.status === 'matched' && (
@@ -502,6 +563,7 @@ const styles = StyleSheet.create({
   acceptButton: { backgroundColor: '#2e7d32' },
   declineButton: { backgroundColor: '#555' },
   rideButtonText: { color: '#fff', fontWeight: '600' },
+  trackingNote: { marginTop: 10, fontSize: 12, color: '#6B675E', textAlign: 'center' },
   countdownText: { color: '#7dd87d', fontSize: 13, fontWeight: '600', marginTop: 4 },
   expiredText: { color: '#e5a0a0', fontSize: 13, fontWeight: '600', marginTop: 4 },
   disabledButton: { opacity: 0.4 },
