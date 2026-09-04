@@ -1,20 +1,22 @@
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { Notifications, pushSupported } from './pushModule';
 
-Notifications.setNotificationHandler({
+if (pushSupported) {
+  Notifications.setNotificationHandler({
   // shouldShowAlert was deprecated and split in two: SDK 57 requires
   // shouldShowBanner (the heads-up alert) and shouldShowList (the
   // notification centre entry) explicitly.
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 // Expo requires an explicit EAS project id when asking for a push token. It comes from app.json (expo.extra.eas.projectId) once the project
 // has been linked with `eas init` — until then getExpoPushTokenAsync() throws,
@@ -36,6 +38,7 @@ let deviceToken = null;
 // registration. Returns null rather than throwing: every caller treats push as
 // best-effort, and sign-out in particular must never be blocked by it.
 async function getDeviceToken() {
+  if (!pushSupported) return null;
   if (deviceToken) return deviceToken;
   if (!Device.isDevice) return null;
 
@@ -59,6 +62,13 @@ async function getDeviceToken() {
 // service role key whenever the rider's ride is matched / accepted /
 // completed.
 export async function registerForPushNotificationsAsync(userId) {
+  if (!pushSupported) {
+    console.warn(
+      'Push notifications are unavailable in Expo Go on Android (removed in ' +
+        'SDK 53). Ride updates still arrive over Realtime while the app is open.'
+    );
+    return;
+  }
   if (!Device.isDevice) return; // push tokens don't work on simulators
 
   const projectId = getProjectId();

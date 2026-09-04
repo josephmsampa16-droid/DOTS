@@ -10,9 +10,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
 import { unregisterPushNotifications } from '../lib/push';
+import { Notifications, pushSupported } from '../lib/pushModule';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
 
 // Matches the ~8s throttle the web driver app uses.
@@ -131,6 +131,7 @@ export default function DriverHomeScreen({ session }) {
   // point the Realtime subscription has only just been re-established and
   // never saw the event that fired the notification.
   useEffect(() => {
+    if (!pushSupported) return;
     const received = Notifications.addNotificationReceivedListener(() =>
       fetchActiveRide()
     );

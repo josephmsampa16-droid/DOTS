@@ -1,8 +1,8 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
+import { Notifications, pushSupported } from './pushModule';
 
 // Android channel used for incoming ride requests. It has to exist before the
 // first notification arrives, and its importance is fixed at creation time —
@@ -30,6 +30,7 @@ function getProjectId() {
 // nobody is signed in on. Returns null rather than throwing: sign-out must
 // never be blocked by push.
 async function getDeviceToken() {
+  if (!pushSupported) return null;
   if (deviceToken) return deviceToken;
   if (!Device.isDevice) return null;
 
@@ -48,20 +49,22 @@ async function getDeviceToken() {
 
 // Show ride requests even when the app is already in the foreground —
 // otherwise a driver staring at the app is the only one who doesn't get told.
-Notifications.setNotificationHandler({
-  // SDK 57 split the deprecated shouldShowAlert into shouldShowBanner (the
-  // heads-up alert) and shouldShowList (the notification centre entry); both
-  // must be set explicitly now.
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+if (pushSupported) {
+  Notifications.setNotificationHandler({
+    // SDK 57 split the deprecated shouldShowAlert into shouldShowBanner (the
+    // heads-up alert) and shouldShowList (the notification centre entry); both
+    // must be set explicitly now.
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 async function ensureAndroidChannel() {
-  if (Platform.OS !== 'android') return;
+  if (!pushSupported || Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(RIDE_REQUEST_CHANNEL, {
     name: 'Ride requests',
     importance: Notifications.AndroidImportance.MAX,
@@ -78,6 +81,13 @@ async function ensureAndroidChannel() {
  * driver with no push should still be able to work the app.
  */
 export async function registerForPushNotifications(userId) {
+  if (!pushSupported) {
+    console.warn(
+      'Push notifications are unavailable in Expo Go on Android (removed in ' +
+        'SDK 53). Ride requests still arrive over Realtime while the app is open.'
+    );
+    return null;
+  }
   try {
     await ensureAndroidChannel();
 
