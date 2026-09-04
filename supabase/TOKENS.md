@@ -163,6 +163,21 @@ dispatches through the trigger.
 The default is open, so this is a step to remember, not something that happens
 on its own.
 
+### The lockdown broke booking, briefly
+
+Revoking EXECUTE on `match_nearest_driver` took ride requests down for every
+rider: `trigger_match_on_ride_request` was the only SECURITY INVOKER function in
+the dispatch path, so it ran as the rider and hit the revoke. Riders got
+"permission denied for function match_nearest_driver" and could not book at all.
+
+It was missed because the check was run from the SQL editor, which connects as a
+superuser — the trigger passed there while failing for every real user. **A
+privilege change has to be exercised as the role that will actually hit it**,
+which for this app means a signed-in rider through the API, not a query in the
+dashboard.
+
+Fixed by making that trigger SECURITY DEFINER like every other trigger here.
+
 ### Still to do
 
 - **No UI yet.** The driver app has no "Buy tokens" screen; the functions are
