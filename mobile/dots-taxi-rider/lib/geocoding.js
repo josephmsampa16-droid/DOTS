@@ -42,11 +42,20 @@ export async function describeCoords(coords) {
 
 // Address -> coordinates, to fill rides.dest_lat/dest_lng when we can. Returns
 // null whenever the geocoder has nothing useful, which is expected and fine.
+// The OS geocoder searches the whole planet and returns the first hit, so a
+// bare "Arcades" resolves to a mall on another continent — which priced a 1km
+// Manda Hill trip at K7,651 in testing. Naming the country keeps it local.
+// Riders who type a country themselves are left alone.
+const REGION_HINT = 'Zambia';
+
 export async function lookupAddress(address) {
   const query = address?.trim();
   if (!query) return null;
+  const localised = new RegExp(REGION_HINT, 'i').test(query)
+    ? query
+    : `${query}, ${REGION_HINT}`;
   try {
-    const results = await Location.geocodeAsync(query);
+    const results = await Location.geocodeAsync(localised);
     const hit = results?.[0];
     if (!hit) return null;
     return { latitude: hit.latitude, longitude: hit.longitude };

@@ -65,6 +65,41 @@ Better still, replace the estimate with a routing API (Google Directions,
 Mapbox, OSRM) that returns true road distance. That costs money per request but
 removes the guesswork.
 
+## The geocoder will lie to you — and the fare maths will believe it
+
+Found while pricing real test rides: three "manda hill -> Arcades" trips, a
+journey of about 1km, priced at **K7,651**. The OS geocoder had resolved
+"Arcades" to somewhere ~1,200km away — a different Arcades on another
+continent — and the fare maths priced that distance without complaint.
+
+This is worse than a missing fare. A null fare is obviously broken and gets
+fixed. A wrong fare looks authoritative and bills someone a fortune.
+
+Two defences are now in place:
+
+1. **The rider app appends ", Zambia"** to any destination that does not
+   already name a country, so `geocodeAsync` stays local instead of taking the
+   first match on Earth.
+2. **`pricing.max_trip_km` (default 500km)** — beyond it `quote_fare()` returns
+   the distance but *no fare*, on the assumption the coordinates are wrong.
+   Nothing is blocked; the ride still exists and can be priced by hand. It just
+   refuses to invent a number.
+
+500km was chosen to clear a real Lusaka-Ndola run (~386km road) while rejecting
+cross-continent errors. Verified:
+
+| Case | Road km | Fare |
+| --- | --- | --- |
+| Manda Hill -> Arcades (correct) | 1.36 | K16.12 |
+| Manda Hill -> KK Airport | 21.94 | K108.73 |
+| Lusaka -> Ndola (genuine intercity) | 386.34 | K1,748.53 |
+| Manda Hill -> wrong "Arcades" | 2023.92 | **no fare** |
+
+Neither defence is a substitute for a map destination picker. Biasing to Zambia
+narrows the search but cannot guarantee the right "Arcades" within Zambia, and
+a wrong-but-plausible destination 8km away will still price silently. Only a
+dropped pin removes the guesswork.
+
 ## Known gap: destinations often have no coordinates
 
 `quote_fare()` returns a null distance and fare when the destination has no
