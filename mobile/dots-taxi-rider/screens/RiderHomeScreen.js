@@ -17,6 +17,7 @@ import {
   registerForPushNotificationsAsync,
   unregisterPushNotificationsAsync,
 } from '../lib/notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { describeCoords, lookupAddress } from '../lib/geocoding';
 import DriverMap from '../components/DriverMap';
 import DestinationPicker from '../components/DestinationPicker';
@@ -42,6 +43,15 @@ const TERMINAL_STATUSES = ['completed', 'no_drivers', 'cancelled'];
 // Every status where the ride is still live and the rider should be looking at
 // it — reopening the app mid-trip has to bring them back to this.
 const ACTIVE_STATUSES = ['requested', 'matched', 'accepted', 'arrived', 'in_progress'];
+
+// A trip can finish while the rider has the app closed — that is the normal
+// case, since they are in the car, not on their phone. Reopening has to still
+// tell them what they owe, so a recent completion is looked up on launch.
+const RECENT_COMPLETION_MINUTES = 30;
+
+// The last ride whose fare the rider has acknowledged. Persisted so the amount
+// is not shoved back at them every time they open the app after paying.
+const SETTLED_RIDE_KEY = 'dots.rider.settledRideId';
 
 // The stages where a driver is assigned and worth showing on the map.
 const DRIVER_ON_MAP_STATUSES = ['matched', 'accepted', 'arrived', 'in_progress'];
@@ -114,7 +124,47 @@ export default function RiderHomeScreen({ session }) {
       .limit(1)
       .maybeSingle();
 
-    if (data) setActiveRide(data);
+    if (data) {
+      setActiveRide(data);
+      return;
+    }
+
+    // No live ride. If one finished recently and the rider never saw the
+    // amount — the app was closed when the driver tapped Complete — show it
+    // now. updated_at is maintained by trg_rides_updated_at on every update.
+    const since = new Date(Date.now() - RECENT_COMPLETION_MINUTES * 60000).toISOString();
+    const { data: done } = await supabase
+      .from('rides')
+      .select('*')
+      .eq('rider_id', session.user.id)
+      .eq('status', 'completed')
+      .gte('updated_at', since)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!done) return;
+
+    let settledId = null;
+    try {
+      settledId = await AsyncStorage.getItem(SETTLED_RIDE_KEY);
+    } catch {
+      // A storage failure should cost the rider a repeated card, not the fare.
+    }
+    if (settledId !== done.id) setFinishedRide(done);
+  };
+
+  // Dismissing means "I have seen what I owe", so it is remembered across
+  // launches rather than reappearing on the next open.
+  const dismissFare = async () => {
+    const settled = finishedRide;
+    setFinishedRide(null);
+    if (!settled) return;
+    try {
+      await AsyncStorage.setItem(SETTLED_RIDE_KEY, settled.id);
+    } catch {
+      // Nothing to do — worst case the card shows once more.
+    }
   };
 
   const subscribeToOwnRideUpdates = () => {
@@ -479,7 +529,7 @@ export default function RiderHomeScreen({ session }) {
                 ? 'Pay your driver in cash.'
                 : 'No distance was recorded — agree the fare with your driver.'}
             </Text>
-            <TouchableOpacity style={styles.payDone} onPress={() => setFinishedRide(null)}>
+            <TouchableOpacity style={styles.payDone} onPress={dismissFare}>
               <Text style={styles.payDoneText}>Done</Text>
             </TouchableOpacity>
           </View>
