@@ -155,7 +155,7 @@ export default function RiderHomeScreen({ session }) {
       let label = null;
 
       if (!coords) {
-        const hit = await lookupAddress(typed);
+        const hit = await lookupAddress(typed, location);
         if (cancelled) return;
         if (!hit) {
           setQuote(null);
@@ -220,7 +220,7 @@ export default function RiderHomeScreen({ session }) {
       // fallback is exactly the path that can place a destination on the wrong
       // continent, so the fare it produces is guarded server-side.
       const resolvedDest =
-        destCoords ?? (destination ? await lookupAddress(destination) : null);
+        destCoords ?? (destination ? await lookupAddress(destination, location) : null);
 
       const { data, error } = await supabase
         .from('rides')
@@ -362,13 +362,21 @@ export default function RiderHomeScreen({ session }) {
                 ) : (
                   // Server withheld a price: past max_trip_km, so the
                   // destination is almost certainly not the one they meant.
-                  <Text style={styles.quoteWarn}>
-                    That destination looks too far to price
-                    {quote?.distance_km
-                      ? ` (about ${Number(quote.distance_km).toFixed(0)} km)`
-                      : ''}
-                    . Check it on the map.
-                  </Text>
+                  <>
+                    <Text style={styles.quoteWarn}>
+                      That looks too far to price
+                      {quote?.distance_km
+                        ? ` — about ${Number(quote.distance_km).toFixed(0)} km away`
+                        : ''}
+                      .
+                    </Text>
+                    <Text style={styles.quoteCheck}>
+                      {quoteLabel
+                        ? `We found "${quoteLabel}", which is probably not the place you meant. `
+                        : 'We could not place that address confidently. '}
+                      Set it on the map instead.
+                    </Text>
+                  </>
                 )}
               </View>
             )}
