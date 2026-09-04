@@ -19,6 +19,7 @@ import {
 } from '../lib/notifications';
 import { describeCoords, lookupAddress } from '../lib/geocoding';
 import DriverMap from '../components/DriverMap';
+import DestinationPicker from '../components/DestinationPicker';
 
 // Confirmed against the real Supabase schema — rides.status is constrained
 // to exactly these seven values (check constraint on the table):
@@ -42,6 +43,12 @@ export default function RiderHomeScreen({ session }) {
   const [pickupAddress, setPickupAddress] = useState('');
   const [destAddress, setDestAddress] = useState('');
   const [prefillingPickup, setPrefillingPickup] = useState(false);
+  // Coordinates the rider confirmed on the map. When set, these are used
+  // instead of geocoding the typed text — the whole point of the picker.
+  const [destCoords, setDestCoords] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [quote, setQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
   const [activeRide, setActiveRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
@@ -116,6 +123,40 @@ export default function RiderHomeScreen({ session }) {
       .subscribe();
   };
 
+  // Quote as soon as there is a confirmed destination, so the rider sees the
+  // price before committing rather than after. The same function runs again in
+  // the database on insert, so this is a preview, not the authority.
+  useEffect(() => {
+    if (!location || !destCoords) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setQuoting(true);
+      const { data, error } = await supabase.rpc('quote_fare', {
+        p_pickup_lat: location.latitude,
+        p_pickup_lng: location.longitude,
+        p_dest_lat: destCoords.latitude,
+        p_dest_lng: destCoords.longitude,
+      });
+      if (cancelled) return;
+      setQuote(error ? null : data?.[0] ?? null);
+      setQuoting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [location, destCoords]);
+
+  const handleDestinationConfirmed = (picked) => {
+    setPickerOpen(false);
+    setDestCoords({ latitude: picked.latitude, longitude: picked.longitude });
+    // Only fill the text box if the rider has not written their own wording;
+    // their description of the place is usually better than the geocoder's.
+    if (picked.address && !destAddress.trim()) setDestAddress(picked.address);
+  };
+
   const requestRide = async () => {
     if (!location) {
       Alert.alert('Location needed', 'Waiting for your location — try again in a moment.');
@@ -130,10 +171,12 @@ export default function RiderHomeScreen({ session }) {
 
     setBusy(true);
     try {
-      // Best-effort only: dest_lat/dest_lng stay null when the geocoder can't
-      // place the address, which is common for informal Zambian addresses.
-      // The driver still sees the text the rider typed.
-      const destCoords = destination ? await lookupAddress(destination) : null;
+      // A pin the rider confirmed beats anything the geocoder guesses. Only
+      // fall back to a text lookup when they never opened the map — and that
+      // fallback is exactly the path that can place a destination on the wrong
+      // continent, so the fare it produces is guarded server-side.
+      const resolvedDest =
+        destCoords ?? (destination ? await lookupAddress(destination) : null);
 
       const { data, error } = await supabase
         .from('rides')
@@ -144,14 +187,16 @@ export default function RiderHomeScreen({ session }) {
           pickup_lng: location.longitude,
           pickup_address: pickup,
           dest_address: destination || null,
-          dest_lat: destCoords?.latitude ?? null,
-          dest_lng: destCoords?.longitude ?? null,
+          dest_lat: resolvedDest?.latitude ?? null,
+          dest_lng: resolvedDest?.longitude ?? null,
         })
         .select()
         .single();
 
       if (error) throw error;
       setActiveRide(data);
+      setDestCoords(null);
+      setQuote(null);
     } catch (err) {
       Alert.alert('Error', err.message);
     } finally {
@@ -229,12 +274,51 @@ export default function RiderHomeScreen({ session }) {
               returnKeyType="done"
             />
 
+            <TouchableOpacity
+              style={[styles.mapButton, !location && styles.buttonDisabled]}
+              onPress={() => setPickerOpen(true)}
+              disabled={!location}
+            >
+              <Text style={styles.mapButtonText}>
+                {destCoords ? 'Change destination on map' : 'Set destination on map'}
+              </Text>
+            </TouchableOpacity>
+
+            {destCoords && (
+              <View style={styles.quoteCard}>
+                {quoting ? (
+                  <Text style={styles.quoteMuted}>Working out the fare…</Text>
+                ) : quote?.fare != null ? (
+                  <>
+                    <Text style={styles.quoteFare}>
+                      {quote.currency} {Number(quote.fare).toFixed(2)}
+                    </Text>
+                    <Text style={styles.quoteMuted}>
+                      about {Number(quote.distance_km).toFixed(1)} km
+                    </Text>
+                  </>
+                ) : (
+                  // Server withheld a price: past max_trip_km, so the pin is
+                  // almost certainly not where the rider meant.
+                  <Text style={styles.quoteWarn}>
+                    That destination looks too far to price
+                    {quote?.distance_km
+                      ? ` (about ${Number(quote.distance_km).toFixed(0)} km)`
+                      : ''}
+                    . Check the pin.
+                  </Text>
+                )}
+              </View>
+            )}
+
             <Text style={styles.requestSubtitle}>
               {!location
                 ? 'Getting your location…'
                 : prefillingPickup
                 ? 'Looking up your address…'
-                : "We'll use your current location as the exact pickup point."}
+                : destCoords
+                ? "We'll use your current location as the exact pickup point."
+                : 'Set a destination on the map to see the fare before you book.'}
             </Text>
 
             <TouchableOpacity
@@ -250,6 +334,13 @@ export default function RiderHomeScreen({ session }) {
             </TouchableOpacity>
           </View>
         )}
+
+        <DestinationPicker
+          visible={pickerOpen}
+          origin={location}
+          onCancel={() => setPickerOpen(false)}
+          onConfirm={handleDestinationConfirmed}
+        />
 
         {activeRide && (
           <View style={styles.statusCard}>
@@ -324,6 +415,24 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
   },
+  mapButton: {
+    borderWidth: 1.5,
+    borderColor: '#1B2A6B',
+    borderRadius: 10,
+    padding: 13,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  mapButtonText: { color: '#1B2A6B', fontWeight: '700' },
+  quoteCard: {
+    backgroundColor: '#F4F5FA',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+  },
+  quoteFare: { fontSize: 26, fontWeight: '800', color: '#111' },
+  quoteMuted: { color: '#6B675E', marginTop: 2 },
+  quoteWarn: { color: '#B0473F', fontWeight: '600' },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   statusCard: {

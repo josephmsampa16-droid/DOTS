@@ -95,12 +95,22 @@ cross-continent errors. Verified:
 | Lusaka -> Ndola (genuine intercity) | 386.34 | K1,748.53 |
 | Manda Hill -> wrong "Arcades" | 2023.92 | **no fare** |
 
-Neither defence is a substitute for a map destination picker. Biasing to Zambia
-narrows the search but cannot guarantee the right "Arcades" within Zambia, and
-a wrong-but-plausible destination 8km away will still price silently. Only a
-dropped pin removes the guesswork.
+Neither defence is a substitute for naming the destination precisely, which is
+why the rider app now has a **map destination picker**: the rider moves the map
+under a fixed pin and confirms, and the app quotes the fare from those
+coordinates before they book. A typed address is still accepted, but it is the
+fallback — and it is the fallback that can land on the wrong continent.
 
-## Known gap: destinations often have no coordinates
+## Destinations without coordinates
+
+A typed destination the geocoder cannot place leaves `dest_lat`/`dest_lng` null,
+and `quote_fare()` then returns no distance and no fare. The ride is still valid
+— the driver sees the text the rider typed — it simply has no price.
+
+The map picker is the way out: a confirmed pin always has coordinates. The note
+below is retained because free text remains available.
+
+### Original note
 
 `quote_fare()` returns a null distance and fare when the destination has no
 lat/lng, and that is the common case today: the OS geocoder frequently cannot
