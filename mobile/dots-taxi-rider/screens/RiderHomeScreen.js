@@ -49,6 +49,10 @@ export default function RiderHomeScreen({ session }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
+  // Whether the current quote came from a confirmed pin or a typed guess, and
+  // the place the geocoder actually chose, so a typed quote can be checked.
+  const [quoteSource, setQuoteSource] = useState(null);
+  const [quoteLabel, setQuoteLabel] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
@@ -123,31 +127,71 @@ export default function RiderHomeScreen({ session }) {
       .subscribe();
   };
 
-  // Quote as soon as there is a confirmed destination, so the rider sees the
-  // price before committing rather than after. The same function runs again in
-  // the database on insert, so this is a preview, not the authority.
+  // Quote as soon as the rider has said where they are going — from a pin if
+  // they set one, otherwise from what they typed, once they stop typing. The
+  // price has to be visible before they commit, not after.
+  //
+  // A typed address is a guess: the geocoder picks a place and it may not be
+  // the one they meant. So a typed quote always shows the place it actually
+  // priced, which is the check that catches a wrong "Arcades" before anyone is
+  // charged for it. A pinned destination needs no such caveat.
+  //
+  // The same quote_fare() runs again in the database on insert, so this is a
+  // preview, never the authority.
   useEffect(() => {
-    if (!location || !destCoords) {
+    const typed = destAddress.trim();
+    if (!location || (!destCoords && !typed)) {
       setQuote(null);
+      setQuoteSource(null);
+      setQuoteLabel(null);
       return;
     }
+
     let cancelled = false;
-    (async () => {
+
+    const run = async () => {
       setQuoting(true);
+      let coords = destCoords;
+      let label = null;
+
+      if (!coords) {
+        const hit = await lookupAddress(typed);
+        if (cancelled) return;
+        if (!hit) {
+          setQuote(null);
+          setQuoteSource('unresolved');
+          setQuoteLabel(null);
+          setQuoting(false);
+          return;
+        }
+        coords = hit;
+        // Name the place back to the rider so a wrong match is visible.
+        label = await describeCoords(hit);
+        if (cancelled) return;
+      }
+
       const { data, error } = await supabase.rpc('quote_fare', {
         p_pickup_lat: location.latitude,
         p_pickup_lng: location.longitude,
-        p_dest_lat: destCoords.latitude,
-        p_dest_lng: destCoords.longitude,
+        p_dest_lat: coords.latitude,
+        p_dest_lng: coords.longitude,
       });
       if (cancelled) return;
       setQuote(error ? null : data?.[0] ?? null);
+      setQuoteSource(destCoords ? 'pin' : 'typed');
+      setQuoteLabel(label);
       setQuoting(false);
-    })();
+    };
+
+    // A pin is a deliberate act, so quote it at once. Typing is not — waiting
+    // for a pause avoids geocoding every keystroke.
+    const delay = destCoords ? 0 : 800;
+    const timer = setTimeout(run, delay);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [location, destCoords]);
+  }, [location, destCoords, destAddress]);
 
   const handleDestinationConfirmed = (picked) => {
     setPickerOpen(false);
@@ -270,7 +314,12 @@ export default function RiderHomeScreen({ session }) {
               style={styles.input}
               placeholder="e.g. Levy Junction, Lusaka"
               value={destAddress}
-              onChangeText={setDestAddress}
+              onChangeText={(text) => {
+                setDestAddress(text);
+                // Editing the text means they are describing somewhere else, so
+                // the old pin no longer stands for what they typed.
+                if (destCoords) setDestCoords(null);
+              }}
               returnKeyType="done"
             />
 
@@ -284,7 +333,7 @@ export default function RiderHomeScreen({ session }) {
               </Text>
             </TouchableOpacity>
 
-            {destCoords && (
+            {(destCoords || destAddress.trim()) && (
               <View style={styles.quoteCard}>
                 {quoting ? (
                   <Text style={styles.quoteMuted}>Working out the fare…</Text>
@@ -296,16 +345,29 @@ export default function RiderHomeScreen({ session }) {
                     <Text style={styles.quoteMuted}>
                       about {Number(quote.distance_km).toFixed(1)} km
                     </Text>
+                    {quoteSource === 'typed' && (
+                      // A typed quote priced whatever the geocoder chose. Naming
+                      // it is what lets the rider notice it picked the wrong one.
+                      <Text style={styles.quoteCheck}>
+                        {quoteLabel ? `Priced to: ${quoteLabel}. ` : ''}
+                        Not right? Set it on the map.
+                      </Text>
+                    )}
                   </>
+                ) : quoteSource === 'unresolved' ? (
+                  <Text style={styles.quoteWarn}>
+                    Couldn't find that address. Set the destination on the map to
+                    get a price.
+                  </Text>
                 ) : (
-                  // Server withheld a price: past max_trip_km, so the pin is
-                  // almost certainly not where the rider meant.
+                  // Server withheld a price: past max_trip_km, so the
+                  // destination is almost certainly not the one they meant.
                   <Text style={styles.quoteWarn}>
                     That destination looks too far to price
                     {quote?.distance_km
                       ? ` (about ${Number(quote.distance_km).toFixed(0)} km)`
                       : ''}
-                    . Check the pin.
+                    . Check it on the map.
                   </Text>
                 )}
               </View>
@@ -316,9 +378,7 @@ export default function RiderHomeScreen({ session }) {
                 ? 'Getting your location…'
                 : prefillingPickup
                 ? 'Looking up your address…'
-                : destCoords
-                ? "We'll use your current location as the exact pickup point."
-                : 'Set a destination on the map to see the fare before you book.'}
+                : "We'll use your current location as the exact pickup point."}
             </Text>
 
             <TouchableOpacity
@@ -433,6 +493,7 @@ const styles = StyleSheet.create({
   quoteFare: { fontSize: 26, fontWeight: '800', color: '#111' },
   quoteMuted: { color: '#6B675E', marginTop: 2 },
   quoteWarn: { color: '#B0473F', fontWeight: '600' },
+  quoteCheck: { color: '#6B675E', fontSize: 12, marginTop: 6, lineHeight: 17 },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   statusCard: {
