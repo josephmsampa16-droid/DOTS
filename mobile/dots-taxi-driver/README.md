@@ -12,6 +12,22 @@ The reason this exists: the web driver app has to stay open in the foreground to
 keep pushing location, because mobile browsers throttle `watchPosition` when
 backgrounded. This app uses a native background location task instead.
 
+
+## Running it in a browser
+
+`react-native-web` + `react-dom` are installed so the app can be opened in a
+browser for a quick look without a device:
+
+```sh
+npx expo start --web
+```
+
+This is for review only. Background location, push delivery and (in the rider
+app) the native map do not exist on web — `components/DriverMap.web.js` is a
+placeholder Metro picks up only for platform `web`, so native builds are
+unaffected. Anything you actually need to trust still has to be checked on a
+device build.
+
 ## Running it
 
 ```sh

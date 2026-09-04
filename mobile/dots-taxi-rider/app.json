@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "DOTS Taxi",
+    "name": "DOTS Taxi Rider",
     "slug": "dots-taxi-rider",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,13 +9,18 @@
       "bundleIdentifier": "com.dotseng.taxirider",
       "supportsTablet": false,
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSLocationWhenInUseUsageDescription": "DOTS Taxi needs your location to set your pickup point and match you with a nearby driver."
       }
     },
     "android": {
       "package": "com.dotseng.taxirider",
-      "permissions": ["ACCESS_FINE_LOCATION", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
       [

@@ -200,7 +200,7 @@ export default function RiderHomeScreen({ session }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <Text style={styles.title}>DOTS Taxi</Text>
+          <Text style={styles.title}>DOTS Taxi Rider</Text>
           <TouchableOpacity onPress={handleLogout}>
             <Text style={styles.logout}>Log out</Text>
           </TouchableOpacity>

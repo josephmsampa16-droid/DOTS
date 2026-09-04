@@ -4,6 +4,22 @@ Rider app for DOTS Taxi. Same Supabase backend (`dots-bookings`,
 `rtjzcqdxprrvewtbxgsi`) as the driver app and the two web apps in the repo root
 — no backend rewrite.
 
+
+## Running it in a browser
+
+`react-native-web` + `react-dom` are installed so the app can be opened in a
+browser for a quick look without a device:
+
+```sh
+npx expo start --web
+```
+
+This is for review only. Background location, push delivery and (in the rider
+app) the native map do not exist on web — `components/DriverMap.web.js` is a
+placeholder Metro picks up only for platform `web`, so native builds are
+unaffected. Anything you actually need to trust still has to be checked on a
+device build.
+
 ## Running it
 
 1. `npm install` in this folder.

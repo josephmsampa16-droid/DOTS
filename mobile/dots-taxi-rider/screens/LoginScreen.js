@@ -57,7 +57,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>DOTS Taxi</Text>
-      <Text style={styles.subtitle}>{isSignUp ? 'Create an account' : 'Welcome back'}</Text>
+      <Text style={styles.subtitle}>{isSignUp ? 'Rider Sign Up' : 'Rider Login'}</Text>
 
       {isSignUp && (
         <>
