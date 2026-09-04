@@ -22,11 +22,15 @@ import DriverMap from '../components/DriverMap';
 import DestinationPicker from '../components/DestinationPicker';
 
 // Confirmed against the real Supabase schema — rides.status is constrained
-// to exactly these seven values (check constraint on the table):
+// to exactly these values (check constraint on the table). `arrived` and
+// `in_progress` are the trip stages the driver reports on their way through
+// the ride.
 const STATUS_LABELS = {
   requested: 'Looking for a nearby driver…',
   matched: 'Driver found — waiting for confirmation',
   accepted: 'Driver is on the way',
+  arrived: 'Your driver is here',
+  in_progress: 'On your way',
   completed: 'Trip completed',
   declined: 'Driver unavailable — searching again',
   no_drivers: 'No drivers available right now',
@@ -34,6 +38,13 @@ const STATUS_LABELS = {
 };
 
 const TERMINAL_STATUSES = ['completed', 'no_drivers', 'cancelled'];
+
+// Every status where the ride is still live and the rider should be looking at
+// it — reopening the app mid-trip has to bring them back to this.
+const ACTIVE_STATUSES = ['requested', 'matched', 'accepted', 'arrived', 'in_progress'];
+
+// The stages where a driver is assigned and worth showing on the map.
+const DRIVER_ON_MAP_STATUSES = ['matched', 'accepted', 'arrived', 'in_progress'];
 
 export default function RiderHomeScreen({ session }) {
   const [location, setLocation] = useState(null);
@@ -54,6 +65,10 @@ export default function RiderHomeScreen({ session }) {
   const [quoteSource, setQuoteSource] = useState(null);
   const [quoteLabel, setQuoteLabel] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
+  // The ride that just finished, held on screen with the amount owed until the
+  // rider dismisses it — the fare is the last thing they need, not the first
+  // thing to disappear.
+  const [finishedRide, setFinishedRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
 
@@ -94,7 +109,7 @@ export default function RiderHomeScreen({ session }) {
       .from('rides')
       .select('*')
       .eq('rider_id', session.user.id)
-      .in('status', ['requested', 'matched', 'accepted'])
+      .in('status', ACTIVE_STATUSES)
       .order('requested_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -116,7 +131,12 @@ export default function RiderHomeScreen({ session }) {
         (payload) => {
           if (payload.eventType === 'DELETE') return;
           const ride = payload.new;
-          if (TERMINAL_STATUSES.includes(ride.status)) {
+          if (ride.status === 'completed') {
+            // Not auto-dismissed: the rider has to pay this amount, so it
+            // stays until they say they are done with it.
+            setFinishedRide(ride);
+            setActiveRide(null);
+          } else if (TERMINAL_STATUSES.includes(ride.status)) {
             setActiveRide(ride);
             setTimeout(() => setActiveRide(null), 4000);
           } else {
@@ -420,6 +440,15 @@ export default function RiderHomeScreen({ session }) {
 
             {activeRide.status === 'requested' && <ActivityIndicator style={{ marginTop: 12 }} />}
 
+            {activeRide.fare != null && (
+              <Text style={styles.rideFare}>
+                Fare {activeRide.currency} {Number(activeRide.fare).toFixed(2)}
+                <Text style={styles.rideFareMuted}>
+                  {'  '}({Number(activeRide.distance_km).toFixed(1)} km)
+                </Text>
+              </Text>
+            )}
+
             {['requested', 'matched', 'no_drivers'].includes(activeRide.status) && (
               <TouchableOpacity style={styles.cancelButton} onPress={cancelRide} disabled={busy}>
                 <Text style={styles.cancelButtonText}>Cancel Request</Text>
@@ -429,9 +458,36 @@ export default function RiderHomeScreen({ session }) {
           </View>
         )}
 
+        {/* What the rider owes, shown the moment the driver completes the trip.
+            The driver sees the same number on their own screen. */}
+        {finishedRide && (
+          <View style={styles.payCard}>
+            <Text style={styles.payTitle}>TRIP COMPLETED</Text>
+            <Text style={styles.payLead}>Amount to pay your driver</Text>
+            <Text style={styles.payAmount}>
+              {finishedRide.fare != null
+                ? `${finishedRide.currency} ${Number(finishedRide.fare).toFixed(2)}`
+                : 'Not priced'}
+            </Text>
+            {finishedRide.distance_km != null && (
+              <Text style={styles.payBody}>
+                {Number(finishedRide.distance_km).toFixed(1)} km trip
+              </Text>
+            )}
+            <Text style={styles.payBody}>
+              {finishedRide.fare != null
+                ? 'Pay your driver in cash.'
+                : 'No distance was recorded — agree the fare with your driver.'}
+            </Text>
+            <TouchableOpacity style={styles.payDone} onPress={() => setFinishedRide(null)}>
+              <Text style={styles.payDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {activeRide &&
           activeRide.driver_id &&
-          ['matched', 'accepted'].includes(activeRide.status) && (
+          DRIVER_ON_MAP_STATUSES.includes(activeRide.status) && (
             <DriverMap ride={activeRide} />
           )}
       </ScrollView>
@@ -520,5 +576,27 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   cancelButton: { marginTop: 20 },
+  rideFare: { color: '#1b5e20', fontSize: 17, fontWeight: '700', marginTop: 10 },
+  rideFareMuted: { color: '#6b675e', fontSize: 13, fontWeight: '500' },
+  payCard: {
+    marginTop: 24,
+    backgroundColor: '#0f2c14',
+    borderRadius: 12,
+    padding: 22,
+    alignItems: 'center',
+  },
+  payTitle: { color: '#9fe5a4', fontSize: 13, fontWeight: '700', letterSpacing: 1.5 },
+  payLead: { color: '#cfe8d2', fontSize: 14, marginTop: 10 },
+  payAmount: { color: '#fff', fontSize: 38, fontWeight: '800', marginTop: 4 },
+  payBody: { color: '#cfe8d2', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  payDone: {
+    marginTop: 18,
+    alignSelf: 'stretch',
+    backgroundColor: '#2e7d32',
+    borderRadius: 8,
+    padding: 13,
+    alignItems: 'center',
+  },
+  payDoneText: { color: '#fff', fontWeight: '700' },
   cancelButtonText: { color: '#ffb3b3', fontSize: 14 },
 });

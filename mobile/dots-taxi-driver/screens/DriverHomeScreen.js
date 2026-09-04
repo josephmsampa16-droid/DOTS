@@ -35,6 +35,9 @@ export default function DriverHomeScreen({ session }) {
   const [backgroundTracking, setBackgroundTracking] = useState(false);
   const [tokenBalance, setTokenBalance] = useState(null);
   const [tokensOpen, setTokensOpen] = useState(false);
+  // The just-finished ride, kept after `activeRide` clears so the driver still
+  // has the amount on screen to read out and collect.
+  const [finishedRide, setFinishedRide] = useState(null);
 
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
@@ -78,7 +81,7 @@ export default function DriverHomeScreen({ session }) {
       .from('rides')
       .select('*')
       .eq('driver_id', driverId)
-      .in('status', ['matched', 'accepted'])
+      .in('status', ['matched', 'accepted', 'arrived', 'in_progress'])
       .order('requested_at', { ascending: false })
       .limit(1);
     setActiveRide(data?.[0] || null);
@@ -353,18 +356,27 @@ export default function DriverHomeScreen({ session }) {
     }
   };
 
-  const completeRide = async () => {
+  // Each stage the driver reports is a fact about the trip — at the pickup,
+  // rider aboard, done — and each is stamped so a later dispute has something
+  // to point at.
+  const advanceRide = async (nextStatus, stampColumn) => {
     if (!activeRide) return;
     setBusy(true);
     try {
-      const { error } = await supabase
-        .from('rides')
-        .update({ status: 'completed' })
-        .eq('id', activeRide.id);
+      const patch = { status: nextStatus };
+      if (stampColumn) patch[stampColumn] = new Date().toISOString();
+      const { error } = await supabase.from('rides').update(patch).eq('id', activeRide.id);
       if (error) throw error;
+      if (nextStatus === 'completed') {
+        // Snapshot before fetchActiveRide() drops it — the fare is what the
+        // driver still needs on screen.
+        setFinishedRide(activeRide);
+      }
       await fetchActiveRide();
-      // The completion trigger just spent a token; show the new number.
-      await fetchTokenBalance();
+      if (nextStatus === 'completed') {
+        // Completion just spent a token; show the new balance.
+        await fetchTokenBalance();
+      }
     } catch (err) {
       Alert.alert('Error', err.message);
     } finally {
@@ -528,19 +540,81 @@ export default function DriverHomeScreen({ session }) {
             </View>
           )}
 
-          {activeRide?.status === 'accepted' && (
+          {['accepted', 'arrived', 'in_progress'].includes(activeRide?.status) && (
             <View style={styles.rideCard}>
-              <Text style={styles.rideTitle}>Ride in progress</Text>
+              <Text style={styles.rideTitle}>
+                {activeRide.status === 'accepted'
+                  ? 'Driving to the rider'
+                  : activeRide.status === 'arrived'
+                  ? 'Waiting for the rider'
+                  : 'Trip in progress'}
+              </Text>
               <Text style={styles.rideDetail}>Pickup: {pickupLabel}</Text>
               <Text style={styles.rideDetail}>
                 Drop-off: {activeRide.dest_address || 'Not specified'}
               </Text>
+
+              {activeRide.fare != null && (
+                <Text style={styles.rideFare}>
+                  Fare {activeRide.currency} {Number(activeRide.fare).toFixed(2)}
+                  <Text style={styles.rideFareMuted}>
+                    {'  '}({Number(activeRide.distance_km).toFixed(1)} km)
+                  </Text>
+                </Text>
+              )}
+
+              {activeRide.status === 'accepted' && (
+                <TouchableOpacity
+                  style={[styles.rideButton, styles.acceptButton]}
+                  onPress={() => advanceRide('arrived', 'arrived_at')}
+                  disabled={busy}
+                >
+                  <Text style={styles.rideButtonText}>I have arrived</Text>
+                </TouchableOpacity>
+              )}
+
+              {activeRide.status === 'arrived' && (
+                <TouchableOpacity
+                  style={[styles.rideButton, styles.acceptButton]}
+                  onPress={() => advanceRide('in_progress', 'started_at')}
+                  disabled={busy}
+                >
+                  <Text style={styles.rideButtonText}>Start ride</Text>
+                </TouchableOpacity>
+              )}
+
+              {activeRide.status === 'in_progress' && (
+                <TouchableOpacity
+                  style={[styles.rideButton, styles.acceptButton]}
+                  onPress={() => advanceRide('completed')}
+                  disabled={busy}
+                >
+                  <Text style={styles.rideButtonText}>Complete ride</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Held on screen after completion so the driver can read the amount
+              out to the rider and collect it, rather than the card vanishing. */}
+          {finishedRide && (
+            <View style={styles.collectCard}>
+              <Text style={styles.collectTitle}>Trip completed</Text>
+              <Text style={styles.collectAmount}>
+                {finishedRide.fare != null
+                  ? `${finishedRide.currency} ${Number(finishedRide.fare).toFixed(2)}`
+                  : 'Fare not priced'}
+              </Text>
+              <Text style={styles.collectBody}>
+                {finishedRide.fare != null
+                  ? 'Collect this amount from the rider in cash.'
+                  : 'No distance was recorded, so agree the fare with the rider.'}
+              </Text>
               <TouchableOpacity
-                style={[styles.rideButton, styles.acceptButton]}
-                onPress={completeRide}
-                disabled={busy}
+                style={styles.collectDone}
+                onPress={() => setFinishedRide(null)}
               >
-                <Text style={styles.rideButtonText}>Complete ride</Text>
+                <Text style={styles.collectDoneText}>Done</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -625,6 +699,29 @@ const styles = StyleSheet.create({
   acceptButton: { backgroundColor: '#2e7d32' },
   declineButton: { backgroundColor: '#555' },
   rideButtonText: { color: '#fff', fontWeight: '600' },
+  rideFare: { color: '#7dd87d', fontSize: 17, fontWeight: '700', marginTop: 4, marginBottom: 4 },
+  rideFareMuted: { color: '#8d8d8d', fontSize: 13, fontWeight: '500' },
+  collectCard: {
+    marginTop: 24,
+    backgroundColor: '#0f2c14',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2e7d32',
+    padding: 20,
+    alignItems: 'center',
+  },
+  collectTitle: { color: '#9fe5a4', fontSize: 14, fontWeight: '600', letterSpacing: 1 },
+  collectAmount: { color: '#fff', fontSize: 34, fontWeight: '800', marginTop: 6 },
+  collectBody: { color: '#cfe8d2', fontSize: 14, textAlign: 'center', marginTop: 10 },
+  collectDone: {
+    marginTop: 16,
+    alignSelf: 'stretch',
+    backgroundColor: '#2e7d32',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  collectDoneText: { color: '#fff', fontWeight: '700' },
   trackingNote: { marginTop: 10, fontSize: 12, color: '#6B675E', textAlign: 'center' },
   countdownText: { color: '#7dd87d', fontSize: 13, fontWeight: '600', marginTop: 4 },
   expiredText: { color: '#e5a0a0', fontSize: 13, fontWeight: '600', marginTop: 4 },

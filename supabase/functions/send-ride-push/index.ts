@@ -56,13 +56,21 @@ const RIDER_MESSAGES: Record<string, { title: string; body: string }> = {
     title: "Your driver is on the way",
     body: "Your driver has accepted and is heading to your pickup point.",
   },
+  arrived: {
+    title: "Your driver is here",
+    body: "Your driver has arrived at the pickup point.",
+  },
+  in_progress: {
+    title: "Trip started",
+    body: "You are on your way. Have a good trip.",
+  },
   no_drivers: {
     title: "No drivers available",
     body: "We couldn't find a driver right now. Try again in a few minutes.",
   },
   completed: {
     title: "Trip completed",
-    body: "Thanks for riding with DOTS Taxi.",
+    body: "Thanks for riding with DOTS Taxi. Open the app for the amount to pay.",
   },
 };
 
