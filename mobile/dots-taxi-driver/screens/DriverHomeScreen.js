@@ -308,7 +308,7 @@ export default function DriverHomeScreen({ session }) {
       await supabase.from('taxis').update({ status: 'Offline' }).eq('id', taxi.id);
     }
     // Must happen before signOut, while RLS still lets us delete this row.
-    await unregisterPushNotifications();
+    await unregisterPushNotifications(driverId);
     await supabase.auth.signOut();
   };
 

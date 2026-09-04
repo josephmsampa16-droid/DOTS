@@ -96,9 +96,8 @@ Most of this was already live for riders. What was added is the **driver** leg:
   `push_tokens` table, deleting **this device's** row at logout so a signed-out
   handset stops receiving requests while the driver's other devices keep
   working. Tokens are keyed by token, many per user, so a driver signed in on
-  two handsets is alerted on both. (The rider app's
-  `unregisterPushNotificationsAsync` deletes every row for the user instead, so
-  signing out of one phone silences all of them — worth aligning.)
+  two handsets is alerted on both. The rider app's `lib/notifications.js` now
+  does the same, so the two apps behave consistently.
 - Android gets a dedicated `ride-requests` channel at MAX importance, so a
   request is a heads-up alert with sound rather than a silent tray entry.
   **Channel importance is fixed when the channel is first created** — changing
