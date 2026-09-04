@@ -22,6 +22,38 @@ const LOCATION_INTERVAL_MS = 8000;
 // Must match expire_stale_ride_offers(45) on the server. The sweep runs every
 // 15s, so the real cutoff is 45-60s — the countdown is the driver's guide, the
 // server is the authority.
+// What the driver sees at each stage of a trip, and the one action that moves
+// it on. Keeping the label, the next status and its timestamp column together
+// means the button can never promise something the update doesn't do.
+const TRIP_STAGES = {
+  accepted: {
+    step: 1,
+    title: 'Driving to the rider',
+    hint: 'Tap when you reach the pickup point.',
+    action: 'I have arrived',
+    next: 'arrived',
+    stamp: 'arrived_at',
+  },
+  arrived: {
+    step: 2,
+    title: 'Waiting for the rider',
+    hint: 'Tap once the rider is in the car.',
+    action: 'Start ride',
+    next: 'in_progress',
+    stamp: 'started_at',
+  },
+  in_progress: {
+    step: 3,
+    title: 'Trip in progress',
+    hint: 'Tap when you reach the drop-off.',
+    action: 'Complete ride',
+    next: 'completed',
+    stamp: null,
+  },
+};
+
+const TRIP_STEP_COUNT = 3;
+
 const OFFER_TIMEOUT_SECONDS = 45;
 
 export default function DriverHomeScreen({ session }) {
@@ -396,6 +428,9 @@ export default function DriverHomeScreen({ session }) {
 
   const offerExpired = secondsLeft === 0;
 
+  // Null unless a trip is underway, which is exactly when the stage card shows.
+  const stage = activeRide ? TRIP_STAGES[activeRide.status] : null;
+
   const pickupLabel =
     activeRide?.pickup_address ||
     (activeRide
@@ -540,15 +575,24 @@ export default function DriverHomeScreen({ session }) {
             </View>
           )}
 
-          {['accepted', 'arrived', 'in_progress'].includes(activeRide?.status) && (
+          {stage && (
             <View style={styles.rideCard}>
-              <Text style={styles.rideTitle}>
-                {activeRide.status === 'accepted'
-                  ? 'Driving to the rider'
-                  : activeRide.status === 'arrived'
-                  ? 'Waiting for the rider'
-                  : 'Trip in progress'}
-              </Text>
+              <View style={styles.stageHeader}>
+                <Text style={styles.rideTitle}>{stage.title}</Text>
+                <Text style={styles.stageStep}>
+                  Step {stage.step} of {TRIP_STEP_COUNT}
+                </Text>
+              </View>
+
+              <View style={styles.stageTrack}>
+                {Array.from({ length: TRIP_STEP_COUNT }, (_, i) => (
+                  <View
+                    key={i}
+                    style={[styles.stageDot, i < stage.step && styles.stageDotDone]}
+                  />
+                ))}
+              </View>
+
               <Text style={styles.rideDetail}>Pickup: {pickupLabel}</Text>
               <Text style={styles.rideDetail}>
                 Drop-off: {activeRide.dest_address || 'Not specified'}
@@ -563,35 +607,24 @@ export default function DriverHomeScreen({ session }) {
                 </Text>
               )}
 
-              {activeRide.status === 'accepted' && (
-                <TouchableOpacity
-                  style={[styles.rideButton, styles.acceptButton]}
-                  onPress={() => advanceRide('arrived', 'arrived_at')}
-                  disabled={busy}
-                >
-                  <Text style={styles.rideButtonText}>I have arrived</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.stageHint}>{stage.hint}</Text>
 
-              {activeRide.status === 'arrived' && (
-                <TouchableOpacity
-                  style={[styles.rideButton, styles.acceptButton]}
-                  onPress={() => advanceRide('in_progress', 'started_at')}
-                  disabled={busy}
-                >
-                  <Text style={styles.rideButtonText}>Start ride</Text>
-                </TouchableOpacity>
-              )}
-
-              {activeRide.status === 'in_progress' && (
-                <TouchableOpacity
-                  style={[styles.rideButton, styles.acceptButton]}
-                  onPress={() => advanceRide('completed')}
-                  disabled={busy}
-                >
-                  <Text style={styles.rideButtonText}>Complete ride</Text>
-                </TouchableOpacity>
-              )}
+              {/* One button, labelled with the thing it actually does. It must
+                  not carry styles.rideButton: that has flex:1 for the two-up
+                  Accept/Decline row, which in this column collapses the button
+                  to its padding and clips the label away. */}
+              <TouchableOpacity
+                style={[styles.stageButton, busy && styles.stageButtonBusy]}
+                onPress={() => advanceRide(stage.next, stage.stamp)}
+                disabled={busy}
+                activeOpacity={0.85}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.stageButtonText}>{stage.action}</Text>
+                )}
+              </TouchableOpacity>
             </View>
           )}
 
@@ -699,6 +732,39 @@ const styles = StyleSheet.create({
   acceptButton: { backgroundColor: '#2e7d32' },
   declineButton: { backgroundColor: '#555' },
   rideButtonText: { color: '#fff', fontWeight: '600' },
+  stageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  stageStep: { color: '#8d8d8d', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
+  stageTrack: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  stageDot: { flex: 1, height: 3, borderRadius: 2, backgroundColor: '#2f2f2f' },
+  stageDotDone: { backgroundColor: '#2e7d32' },
+  stageHint: { color: '#9a9a9a', fontSize: 13, marginTop: 14, marginBottom: 4 },
+  stageButton: {
+    marginTop: 10,
+    backgroundColor: '#2e7d32',
+    borderRadius: 28,
+    paddingVertical: 17,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  stageButtonBusy: { opacity: 0.7 },
+  stageButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   rideFare: { color: '#7dd87d', fontSize: 17, fontWeight: '700', marginTop: 4, marginBottom: 4 },
   rideFareMuted: { color: '#8d8d8d', fontSize: 13, fontWeight: '500' },
   collectCard: {
