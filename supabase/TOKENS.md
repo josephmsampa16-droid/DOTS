@@ -82,20 +82,64 @@ Two ways to fix it without abandoning tokens:
 Neither requires a schema change — tiering is a few lines in
 `charge_ride_token()`, and the price is a column.
 
-## Not built yet: MoMo top-up
+## Buying tokens (MTN Mobile Money)
 
-Buying tokens still has to be wired to the existing MTN integration
-(`mtn-initiate-payment` / `mtn-check-payment` and the `momo_transactions`
-table). The pieces needed:
+Two edge functions, both driver-scoped:
 
-1. A driver-facing function that starts a Request to Pay for
-   `tokens x token_price` and records the intended token count.
-2. Crediting on confirmation — `mtn-check-payment` currently marks a booking
-   Confirmed and writes to `payments`; it needs a branch that calls
-   `adjust_tokens(..., 'topup', momo_transaction_id => ...)` instead when the
-   transaction is a token purchase.
-3. Both existing functions are **Staff only**. Drivers must be allowed to buy
-   their own tokens, so that check has to change for the top-up path.
+| Function | Does |
+| --- | --- |
+| `driver-buy-tokens` | starts a Request to Pay; MTN pushes a PIN prompt to the driver's phone |
+| `driver-check-topup` | polled after; credits the tokens the first time MTN reports SUCCESSFUL |
 
-`token_ledger.momo_transaction_id` already exists to tie a credit back to the
-payment that produced it.
+They are separate from `mtn-initiate-payment` / `mtn-check-payment` rather than
+extra branches inside them. Those two are staff-only and handle bookings;
+widening their auth so drivers could call them would also let any driver poll
+every booking payment in the system. Two narrower functions keep the blast
+radius small.
+
+### What is protected, and how
+
+**The price is never taken from the request.** The client says how many tokens;
+`driver-buy-tokens` reads `pricing.token_price` and computes the amount. A
+client that could name its own amount could buy 100 tokens for one ngwee — the
+same reasoning that keeps fares server-side.
+
+**A driver can only act on their own account.** `driver_id` comes from the
+verified JWT, never from the body, on both functions.
+
+**One payment credits once.** Guarded twice: the function checks the stored
+status first, and a unique index on
+`token_ledger(momo_transaction_id) where reason = 'topup'` means two polls
+racing cannot both succeed — the second insert is refused by the database
+rather than relying on the code winning the race.
+
+**The transaction row is written before the request goes out.** If MTN accepts
+the payment but the response never arrives, the row still exists and can be
+polled. Losing a driver's money to a dropped connection is not an acceptable
+failure.
+
+### Verified end to end against MTN sandbox
+
+| Case | Result |
+| --- | --- |
+| Rider calls `driver-buy-tokens` | `Drivers only` (403) |
+| quantity 0 / 9999 | rejected, 1-500 |
+| malformed phone | rejected |
+| Driver buys 5 tokens | RTP created, amount 25.00 (5 x K5) |
+| First poll | `SUCCESSFUL, credited: true`, balance 5 |
+| Second poll | `SUCCESSFUL`, balance still 5 |
+| Polling an unknown reference | `Transaction not found` |
+| Two credits for one payment (DB level) | second refused, one ledger row |
+
+Sandbox reports EUR whatever the real currency — a documented MTN quirk. In
+production the currency comes from `MTN_CURRENCY` or the price list.
+
+### Still to do
+
+- **No UI yet.** The driver app has no "Buy tokens" screen; the functions are
+  callable but nothing calls them. That is the next piece.
+- **Production credentials.** `MTN_ENVIRONMENT` is still `sandbox`. Going live
+  needs the production subscription key, API user and key, and
+  `MTN_ENVIRONMENT=production`.
+- **Airtel Money is not covered.** A large share of Zambian drivers are not on
+  MTN, and today they cannot buy tokens at all.
