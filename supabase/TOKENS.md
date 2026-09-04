@@ -134,6 +134,35 @@ failure.
 Sandbox reports EUR whatever the real currency — a documented MTN quirk. In
 production the currency comes from `MTN_CURRENCY` or the price list.
 
+## Security: privileged functions are not public
+
+Postgres grants EXECUTE on new functions to PUBLIC by default, and Supabase
+exposes every public function over PostgREST. The anon key is published in
+`index.html`, so a function left at the default is callable by anyone on the
+internet.
+
+This was found by trying it, not by reading the code: an unauthenticated caller
+holding only the public anon key ran `adjust_tokens` and minted 500 tokens.
+
+| Function | Who may call it now |
+| --- | --- |
+| `adjust_tokens` | `service_role` only (edge functions); triggers reach it as definer |
+| `match_nearest_driver` | `service_role` only; triggers reach it as definer |
+| `decline_ride` | `authenticated`, and only for a ride assigned to the caller |
+| `quote_fare` | `authenticated` |
+
+`decline_ride` also gained an ownership check. It never verified who was
+calling, so any signed-in user could decline anybody else's ride.
+
+Verified after the change: anonymous calls to all three privileged functions
+return `permission denied`, a signed-in driver cannot mint their own tokens,
+`quote_fare` still works for a signed-in user, and a ride insert still
+dispatches through the trigger.
+
+**Any new function that touches money or dispatch needs the same treatment.**
+The default is open, so this is a step to remember, not something that happens
+on its own.
+
 ### Still to do
 
 - **No UI yet.** The driver app has no "Buy tokens" screen; the functions are

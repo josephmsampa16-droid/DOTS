@@ -13,6 +13,7 @@ import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { unregisterPushNotifications } from '../lib/push';
 import { Notifications, pushSupported } from '../lib/pushModule';
+import TokensScreen from './TokensScreen';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
 
 // Matches the ~8s throttle the web driver app uses.
@@ -32,6 +33,8 @@ export default function DriverHomeScreen({ session }) {
   const [activeRide, setActiveRide] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [backgroundTracking, setBackgroundTracking] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState(null);
+  const [tokensOpen, setTokensOpen] = useState(false);
 
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
@@ -41,6 +44,17 @@ export default function DriverHomeScreen({ session }) {
   const foregroundWatchRef = useRef(null);
 
   const isOnline = taxi?.status === 'Online';
+
+  // Dispatch skips a driver on zero, so this number decides whether they get
+  // work at all. Refetched whenever it could have moved rather than cached.
+  const fetchTokenBalance = useCallback(async () => {
+    const { data } = await supabase
+      .from('driver_wallets')
+      .select('token_balance')
+      .eq('driver_id', driverId)
+      .maybeSingle();
+    setTokenBalance(data?.token_balance ?? 0);
+  }, [driverId]);
 
   const fetchTaxi = useCallback(async () => {
     // A driver may not have registered a vehicle yet, so no .single() here —
@@ -72,7 +86,7 @@ export default function DriverHomeScreen({ session }) {
 
   useEffect(() => {
     (async () => {
-      await Promise.all([fetchTaxi(), fetchActiveRide()]);
+      await Promise.all([fetchTaxi(), fetchActiveRide(), fetchTokenBalance()]);
       setLoading(false);
     })();
 
@@ -98,7 +112,7 @@ export default function DriverHomeScreen({ session }) {
         channelRef.current = null;
       }
     };
-  }, [driverId, fetchTaxi, fetchActiveRide]);
+  }, [driverId, fetchTaxi, fetchActiveRide, fetchTokenBalance]);
 
   // Countdown on an unanswered offer, so the driver can see it is timed.
   useEffect(() => {
@@ -349,6 +363,8 @@ export default function DriverHomeScreen({ session }) {
         .eq('id', activeRide.id);
       if (error) throw error;
       await fetchActiveRide();
+      // The completion trigger just spent a token; show the new number.
+      await fetchTokenBalance();
     } catch (err) {
       Alert.alert('Error', err.message);
     } finally {
@@ -386,10 +402,28 @@ export default function DriverHomeScreen({ session }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>DOTS Taxi Driver</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logout}>Log out</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[styles.tokenChip, tokenBalance === 0 && styles.tokenChipEmpty]}
+            onPress={() => setTokensOpen(true)}
+          >
+            <Text style={[styles.tokenChipText, tokenBalance === 0 && styles.tokenChipTextEmpty]}>
+              {tokenBalance ?? '—'} tokens
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={styles.logout}>Log out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <TokensScreen
+        visible={tokensOpen}
+        session={session}
+        balance={tokenBalance}
+        onClose={() => setTokensOpen(false)}
+        onBalanceChange={fetchTokenBalance}
+      />
 
       {!taxi ? (
         <View>
@@ -430,6 +464,15 @@ export default function DriverHomeScreen({ session }) {
             {taxi.plate} — {taxi.model}
             {taxi.color ? ` (${taxi.color})` : ''}
           </Text>
+
+          {tokenBalance === 0 && (
+            <TouchableOpacity style={styles.emptyBanner} onPress={() => setTokensOpen(true)}>
+              <Text style={styles.emptyBannerTitle}>You are out of tokens</Text>
+              <Text style={styles.emptyBannerBody}>
+                Ride requests will not reach you until you top up. Tap to buy.
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.statusCard}>
             <Text style={styles.statusLabel}>{isOnline ? 'Online' : 'Offline'}</Text>
@@ -523,6 +566,24 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700' },
   logout: { color: '#c00', fontSize: 14 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  tokenChip: {
+    backgroundColor: '#EDEFF7',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  tokenChipEmpty: { backgroundColor: '#F6E3E1' },
+  tokenChipText: { color: '#1B2A6B', fontWeight: '700', fontSize: 13 },
+  tokenChipTextEmpty: { color: '#B0473F' },
+  emptyBanner: {
+    backgroundColor: '#F6E3E1',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  emptyBannerTitle: { color: '#B0473F', fontWeight: '800', marginBottom: 2 },
+  emptyBannerBody: { color: '#8A3A34', fontSize: 13 },
   sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
   hint: { color: '#666', marginBottom: 16 },
   input: {
