@@ -400,9 +400,16 @@ export default function DriverHomeScreen({ session }) {
       const { error } = await supabase.from('rides').update(patch).eq('id', activeRide.id);
       if (error) throw error;
       if (nextStatus === 'completed') {
-        // Snapshot before fetchActiveRide() drops it — the fare is what the
-        // driver still needs on screen.
-        setFinishedRide(activeRide);
+        // Re-read rather than reusing activeRide: the commission split is
+        // written by an AFTER UPDATE trigger, so it does not exist on the copy
+        // we held a moment ago. Fall back to that copy if the read fails —
+        // the fare alone is still worth showing.
+        const { data: settled } = await supabase
+          .from('rides')
+          .select('*')
+          .eq('id', activeRide.id)
+          .maybeSingle();
+        setFinishedRide(settled ?? activeRide);
       }
       await fetchActiveRide();
       if (nextStatus === 'completed') {
@@ -643,6 +650,27 @@ export default function DriverHomeScreen({ session }) {
                   ? 'Collect this amount from the rider in cash.'
                   : 'No distance was recorded, so agree the fare with the rider.'}
               </Text>
+
+              {/* What the ride actually earned, once DOTS's share is out. The
+                  driver should never have to work this out themselves. */}
+              {finishedRide.driver_payout != null && (
+                <View style={styles.splitBox}>
+                  <View style={styles.splitRow}>
+                    <Text style={styles.splitLabel}>
+                      DOTS {(Number(finishedRide.commission_rate) * 100).toFixed(0)}%
+                    </Text>
+                    <Text style={styles.splitValue}>
+                      -{finishedRide.currency} {Number(finishedRide.commission_amount).toFixed(2)}
+                    </Text>
+                  </View>
+                  <View style={styles.splitRow}>
+                    <Text style={styles.splitLabelStrong}>You keep</Text>
+                    <Text style={styles.splitValueStrong}>
+                      {finishedRide.currency} {Number(finishedRide.driver_payout).toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              )}
               <TouchableOpacity
                 style={styles.collectDone}
                 onPress={() => setFinishedRide(null)}
@@ -787,6 +815,19 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
+  splitBox: {
+    alignSelf: 'stretch',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2e7d32',
+    gap: 6,
+  },
+  splitRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  splitLabel: { color: '#9fe5a4', fontSize: 14 },
+  splitValue: { color: '#9fe5a4', fontSize: 14, fontWeight: '600' },
+  splitLabelStrong: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  splitValueStrong: { color: '#fff', fontSize: 18, fontWeight: '800' },
   collectDoneText: { color: '#fff', fontWeight: '700' },
   trackingNote: { marginTop: 10, fontSize: 12, color: '#6B675E', textAlign: 'center' },
   countdownText: { color: '#7dd87d', fontSize: 13, fontWeight: '600', marginTop: 4 },

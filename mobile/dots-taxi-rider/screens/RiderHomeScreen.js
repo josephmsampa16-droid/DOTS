@@ -442,7 +442,70 @@ export default function RiderHomeScreen({ session }) {
                     </Text>
                     <Text style={styles.quoteMuted}>
                       about {Number(quote.distance_km).toFixed(1)} km
+                      {quote.duration_min != null
+                        ? ` · around ${Math.round(Number(quote.duration_min))} min`
+                        : ''}
                     </Text>
+
+                    {/* The fare broken into its parts. A rider who can see how
+                        the number was reached has no reason to suspect it. */}
+                    {quote.base_fare != null && (
+                      <View style={styles.breakdown}>
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Base fare</Text>
+                          <Text style={styles.breakdownValue}>
+                            {Number(quote.base_fare).toFixed(2)}
+                          </Text>
+                        </View>
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>
+                            Distance · {Number(quote.distance_km).toFixed(1)} km
+                          </Text>
+                          <Text style={styles.breakdownValue}>
+                            {Number(quote.distance_charge).toFixed(2)}
+                          </Text>
+                        </View>
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>
+                            Time · {Math.round(Number(quote.duration_min))} min
+                          </Text>
+                          <Text style={styles.breakdownValue}>
+                            {Number(quote.time_charge).toFixed(2)}
+                          </Text>
+                        </View>
+
+                        {/* Only shown when demand actually moved the price, in
+                            either direction — a silent multiplier is the thing
+                            riders resent about other apps. */}
+                        {quote.demand_multiplier != null &&
+                          Number(quote.demand_multiplier) !== 1 && (
+                            <View style={styles.breakdownRow}>
+                              <Text
+                                style={[
+                                  styles.breakdownLabel,
+                                  Number(quote.demand_multiplier) < 1
+                                    ? styles.demandDown
+                                    : styles.demandUp,
+                                ]}
+                              >
+                                {Number(quote.demand_multiplier) < 1
+                                  ? 'Quiet right now — discount'
+                                  : 'Busy right now'}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.breakdownValue,
+                                  Number(quote.demand_multiplier) < 1
+                                    ? styles.demandDown
+                                    : styles.demandUp,
+                                ]}
+                              >
+                                ×{Number(quote.demand_multiplier).toFixed(2)}
+                              </Text>
+                            </View>
+                          )}
+                      </View>
+                    )}
                     {quoteSource === 'typed' && (
                       // A typed quote priced whatever the geocoder chose. Naming
                       // it is what lets the rider notice it picked the wrong one.
@@ -636,6 +699,18 @@ const styles = StyleSheet.create({
   quoteMuted: { color: '#6B675E', marginTop: 2 },
   quoteWarn: { color: '#B0473F', fontWeight: '600' },
   quoteCheck: { color: '#6B675E', fontSize: 12, marginTop: 6, lineHeight: 17 },
+  breakdown: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E3E0D8',
+    gap: 4,
+  },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  breakdownLabel: { color: '#6B675E', fontSize: 13 },
+  breakdownValue: { color: '#3A3730', fontSize: 13, fontWeight: '600' },
+  demandUp: { color: '#B0473F' },
+  demandDown: { color: '#2e7d32' },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   statusCard: {
