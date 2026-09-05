@@ -67,7 +67,7 @@ decline from the office; **an unapproved vehicle cannot go Online**.
 - Dispatch and the Online toggle gate on `approved`.
 
 ## Suggested order
-1. §6 geofence + §3 nearby count + §4 rider contact + §5 driver card (small, all high value)
+1. ~~§6 geofence + §3 nearby count + §4 rider contact + §5 driver card~~ **done 5 Sep**
 2. §1 typed-pickup fix + §2 passenger fields (unlocks parcels)
 3. §7 ratings
 4. §8 photos + approval

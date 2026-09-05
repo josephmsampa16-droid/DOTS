@@ -10,7 +10,7 @@ set -e
 cd "$(dirname "$0")"
 BASE="https://raw.githubusercontent.com/josephmsampa16-droid/DOTS/claude/new-session-oxfk8h/mobile/dots-taxi-driver"
 
-FILES="App.js app.json assets/dots-logo-white.png components/icons.js components/ui.js lib/format.js lib/push.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/DriverHomeScreen.js screens/LoginScreen.js screens/TripsScreen.js screens/WalletScreen.js tasks/locationTask.js assets/fonts/NunitoSans-Regular.ttf assets/fonts/NunitoSans-SemiBold.ttf assets/fonts/NunitoSans-Bold.ttf assets/fonts/NunitoSans-ExtraBold.ttf lib/fonts.js package.json"
+FILES="App.js app.json assets/dots-logo-white.png components/icons.js components/ui.js lib/format.js lib/push.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/DriverHomeScreen.js screens/LoginScreen.js screens/TripsScreen.js screens/WalletScreen.js tasks/locationTask.js assets/fonts/NunitoSans-Regular.ttf assets/fonts/NunitoSans-SemiBold.ttf assets/fonts/NunitoSans-Bold.ttf assets/fonts/NunitoSans-ExtraBold.ttf lib/fonts.js package.json components/RiderCard.js"
 
 echo "Updating dots-taxi-driver ..."
 for f in $FILES; do

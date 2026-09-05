@@ -25,6 +25,7 @@ import {
   Notice,
   Hint,
 } from '../components/ui';
+import RiderCard from '../components/RiderCard';
 import { unregisterPushNotifications } from '../lib/push';
 import { Notifications, pushSupported } from '../lib/pushModule';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
@@ -541,6 +542,7 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
                 top={<FieldStatic label="PICKUP" value={pickupLabel} />}
                 bottom={<FieldStatic label="DROP-OFF" value={activeRide.dest_address || 'Not specified'} muted={!activeRide.dest_address} />}
               />
+              <RiderCard ride={activeRide} showPhone={false} />
               {activeRide.fare != null && (
                 <View style={styles.fareRow}>
                   <Label>FARE</Label>
@@ -585,6 +587,7 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
                 top={<FieldStatic label="PICKUP" value={pickupLabel} />}
                 bottom={<FieldStatic label="DROP-OFF" value={activeRide.dest_address || 'Not specified'} muted={!activeRide.dest_address} />}
               />
+              <RiderCard ride={activeRide} showPhone />
               {activeRide.fare != null && (
                 <View style={styles.fareRow}>
                   <Label>FARE</Label>

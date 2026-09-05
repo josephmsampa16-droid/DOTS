@@ -11,6 +11,20 @@ import RiderHomeScreen from './screens/RiderHomeScreen';
 import TripsScreen from './screens/TripsScreen';
 import AccountScreen from './screens/AccountScreen';
 
+// The database now copies the phone from signup metadata itself; this covers
+// a rider whose profile predates that, so the driver can still call them.
+async function syncPhoneFromMetadata(session) {
+  const phone = session.user.user_metadata?.phone;
+  if (!phone) return;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('phone')
+    .eq('id', session.user.id)
+    .maybeSingle();
+  if (error || !data || data.phone) return;
+  await supabase.from('profiles').update({ phone }).eq('id', session.user.id);
+}
+
 const TABS = [
   { key: 'ride', label: 'Ride', Icon: CarIcon },
   { key: 'trips', label: 'My Trips', Icon: ClockIcon },
@@ -63,6 +77,10 @@ export default function App() {
       listener?.subscription?.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (session) syncPhoneFromMetadata(session);
+  }, [session?.user?.id]);
 
   if (loading || (!fontsLoaded && !fontError)) {
     return (

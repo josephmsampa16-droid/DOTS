@@ -26,6 +26,8 @@ import {
   Notice,
 } from '../components/ui';
 import { CarIcon, SwapIcon } from '../components/icons';
+import SearchingMap from '../components/SearchingMap';
+import DriverCard from '../components/DriverCard';
 
 const TIERS = [
   { key: 'standard', label: 'Standard', Icon: CarIcon },
@@ -98,6 +100,11 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   // Standard, Comfort or XL. Each tier is priced by its own row in the
   // pricing table; the choice is sent with the quote and again on booking.
   const [serviceTier, setServiceTier] = useState('standard');
+  // Which DOTS area the rider is standing in: undefined until checked, null
+  // when outside every one (the app then says so instead of taking a booking).
+  const [serviceArea, setServiceArea] = useState(undefined);
+  // Free drivers within reach of the pickup, refreshed while it matters.
+  const [nearby, setNearby] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   // The ride that just finished, held on screen with the amount owed until the
   // rider dismisses it — the fare is the last thing they need, not the first
@@ -127,6 +134,14 @@ export default function RiderHomeScreen({ session, logoutRef }) {
     }
     const pos = await Location.getCurrentPositionAsync({});
     setLocation(pos.coords);
+
+    // Lusaka only, for now. Decided in the database, so the answer here is the
+    // same one the booking would get.
+    const { data: area } = await supabase.rpc('service_area_for', {
+      p_lat: pos.coords.latitude,
+      p_lng: pos.coords.longitude,
+    });
+    setServiceArea(area ?? null);
 
     // Prefill the pickup field so the rider usually just confirms it instead
     // of typing. Leaves the field alone if they already started editing.
@@ -221,6 +236,32 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       .subscribe();
   };
 
+  // How many drivers could take this ride. Polled faster while a search is on,
+  // slower while the rider is only deciding.
+  useEffect(() => {
+    const point =
+      activeRide && activeRide.pickup_lat != null
+        ? { latitude: activeRide.pickup_lat, longitude: activeRide.pickup_lng }
+        : location;
+    if (!point) return undefined;
+    const searching = activeRide && ['requested', 'matched', 'declined'].includes(activeRide.status);
+    let cancelled = false;
+    const tick = async () => {
+      const { data } = await supabase.rpc('available_drivers_near', {
+        p_lat: point.latitude,
+        p_lng: point.longitude,
+        p_radius_km: 8,
+      });
+      if (!cancelled && typeof data === 'number') setNearby(data);
+    };
+    tick();
+    const timer = setInterval(tick, searching ? 8000 : 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [location?.latitude, location?.longitude, activeRide?.id, activeRide?.status]);
+
   // Quote as soon as the rider has said where they are going — from a pin if
   // they set one, otherwise from what they typed, once they stop typing. The
   // price has to be visible before they commit, not after.
@@ -262,6 +303,20 @@ export default function RiderHomeScreen({ session, logoutRef }) {
         // Name the place back to the rider so a wrong match is visible.
         label = await describeCoords(hit);
         if (cancelled) return;
+      }
+
+      // A destination outside every service area gets a notice, not a price.
+      const { data: destArea } = await supabase.rpc('service_area_for', {
+        p_lat: coords.latitude,
+        p_lng: coords.longitude,
+      });
+      if (cancelled) return;
+      if (!destArea) {
+        setQuote(null);
+        setQuoteSource('out_of_area');
+        setQuoteLabel(label);
+        setQuoting(false);
+        return;
       }
 
       const { data, error } = await supabase.rpc('quote_fare', {
@@ -392,7 +447,8 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   // A ride needs somewhere to go before it can be priced, so the button stays
   // dimmed until the rider has said where. requestRide() checks again, since a
   // disabled button is a courtesy and not a guarantee.
-  const canRequest = Boolean(location) && Boolean(destCoords || destAddress.trim());
+  const canRequest =
+    Boolean(location) && serviceArea != null && Boolean(destCoords || destAddress.trim());
 
   // Account's Log out borrows this screen's, which also removes the push
   // token while RLS still allows it.
@@ -425,7 +481,18 @@ export default function RiderHomeScreen({ session, logoutRef }) {
     <Screen role="RIDER" keyboard strip={strip}>
       {locationError && <Notice tone="red" title="Location needed" body={locationError} />}
 
-      {!activeRide && (
+      {!activeRide && serviceArea === null && (
+        <Card style={{ gap: 10 }}>
+          <Label>NOT HERE YET</Label>
+          <Text style={styles.outsideTitle}>DOTS is not yet available in your city.</Text>
+          <Hint>
+            It is coming soon — you will be able to book here. For now DOTS runs in Lusaka,
+            Chongwe and Chilanga.
+          </Hint>
+        </Card>
+      )}
+
+      {!activeRide && serviceArea !== null && (
         <>
           <Card style={{ paddingBottom: 16 }}>
             <Timeline
@@ -516,6 +583,15 @@ export default function RiderHomeScreen({ session, logoutRef }) {
                     </Hint>
                   )}
                 </>
+              ) : quoteSource === 'out_of_area' ? (
+                <Notice
+                  tone="amber"
+                  title="DOTS does not go there yet"
+                  body={
+                    (quoteLabel ? `"${quoteLabel}" is outside our area. ` : '') +
+                    'Drop-offs must be within Lusaka, Chongwe or Chilanga for now.'
+                  }
+                />
               ) : quoteSource === 'unresolved' ? (
                 <Notice
                   tone="amber"
@@ -543,7 +619,14 @@ export default function RiderHomeScreen({ session, logoutRef }) {
           <Hint>
             {!location
               ? 'Getting your location…'
-              : "We'll use your current location as the exact pickup point. The price you see is the price you pay, in cash to your driver."}
+              : (nearby == null
+                  ? ''
+                  : nearby === 0
+                  ? 'No drivers nearby at the moment. '
+                  : nearby === 1
+                  ? '1 driver nearby. '
+                  : `${nearby} drivers nearby. `) +
+                "We'll use your current location as the exact pickup point. The price you see is the price you pay, in cash to your driver."}
           </Hint>
 
           <PrimaryButton
@@ -561,6 +644,19 @@ export default function RiderHomeScreen({ session, logoutRef }) {
         onCancel={() => setPickerOpen(false)}
         onConfirm={handleDestinationConfirmed}
       />
+
+      {activeRide && !activeRide.driver_id && ['requested', 'matched', 'declined'].includes(activeRide.status) && (
+        <SearchingMap
+          pickup={
+            activeRide.pickup_lat != null
+              ? { latitude: activeRide.pickup_lat, longitude: activeRide.pickup_lng }
+              : location
+          }
+          nearby={nearby}
+        />
+      )}
+
+      {activeRide && activeRide.driver_id && <DriverCard ride={activeRide} />}
 
       {activeRide && (
         <Card style={{ gap: 12 }}>
@@ -590,6 +686,8 @@ export default function RiderHomeScreen({ session, logoutRef }) {
 
       {/* What the rider owes, shown the moment the driver completes the trip.
           The driver sees the same number on their own screen. */}
+      {finishedRide && finishedRide.driver_id && <DriverCard ride={finishedRide} />}
+
       {finishedRide && (
         <Card style={styles.pay}>
           <Label style={{ color: colors.green }}>TRIP COMPLETED</Label>
@@ -634,6 +732,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
+  outsideTitle: { fontSize: 20, ...weight('800'), color: colors.ink, letterSpacing: -0.2 },
   quoteHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   meta: { fontSize: 12, ...weight('600'), color: colors.muted },
   quoteFare: { fontSize: 30, ...weight('800'), letterSpacing: -0.6, color: colors.ink, marginTop: -4 },
