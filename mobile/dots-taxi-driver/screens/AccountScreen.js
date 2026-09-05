@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { initials } from '../lib/format';
 import { Screen, Card, Label, Row, Chip, LinkRow, Hint } from '../components/ui';
 import { UserIcon } from '../components/icons';
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.white, fontSize: 20, fontWeight: '800' },
+  avatarText: { color: colors.white, fontSize: 20, ...weight('800') },
   profileText: { flex: 1, gap: 3 },
-  name: { fontSize: 19, fontWeight: '800', color: colors.ink },
-  contact: { fontSize: 13, color: colors.muted },
+  name: { fontSize: 19, ...weight('800'), color: colors.ink },
+  contact: { ...weight('400'), fontSize: 13, color: colors.muted },
 });

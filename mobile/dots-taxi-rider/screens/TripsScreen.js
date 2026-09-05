@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ScrollView } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { money, whenLabel } from '../lib/format';
 import { Header, Card, Label, Chip, EmptyState } from '../components/ui';
 
@@ -101,8 +101,8 @@ const styles = StyleSheet.create({
   tripLast: { borderBottomWidth: 0 },
   tripLeft: { flex: 1, gap: 3 },
   tripRight: { alignItems: 'flex-end', gap: 5 },
-  when: { fontSize: 12, fontWeight: '600', color: colors.muted },
-  route: { fontSize: 15, fontWeight: '700', color: colors.ink },
-  meta: { fontSize: 12, color: colors.muted },
-  fare: { fontSize: 15, fontWeight: '800', color: colors.ink },
+  when: { fontSize: 12, ...weight('600'), color: colors.muted },
+  route: { fontSize: 15, ...weight('700'), color: colors.ink },
+  meta: { ...weight('400'), fontSize: 12, color: colors.muted },
+  fare: { fontSize: 15, ...weight('800'), color: colors.ink },
 });

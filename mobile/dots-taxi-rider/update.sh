@@ -10,7 +10,7 @@ set -e
 cd "$(dirname "$0")"
 BASE="https://raw.githubusercontent.com/josephmsampa16-droid/DOTS/claude/new-session-oxfk8h/mobile/dots-taxi-rider"
 
-FILES="App.js app.json assets/dots-logo-white.png components/DestinationPicker.js components/DestinationPicker.web.js components/DriverMap.js components/DriverMap.web.js components/icons.js components/ui.js lib/format.js lib/geocoding.js lib/notifications.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/LoginScreen.js screens/RiderHomeScreen.js screens/TripsScreen.js"
+FILES="App.js app.json assets/dots-logo-white.png components/DestinationPicker.js components/DestinationPicker.web.js components/DriverMap.js components/DriverMap.web.js components/icons.js components/ui.js lib/format.js lib/geocoding.js lib/notifications.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/LoginScreen.js screens/RiderHomeScreen.js screens/TripsScreen.js assets/fonts/NunitoSans-Regular.ttf assets/fonts/NunitoSans-SemiBold.ttf assets/fonts/NunitoSans-Bold.ttf assets/fonts/NunitoSans-ExtraBold.ttf lib/fonts.js package.json"
 
 echo "Updating dots-taxi-rider ..."
 for f in $FILES; do
@@ -29,4 +29,8 @@ for f in ; do
   if [ -f "$f" ]; then rm -f "$f"; echo "  removed old file $f"; fi
 done
 
+if [ ! -e node_modules/expo-font ]; then
+  echo "Installing the font loader (one time) ..."
+  npx expo install expo-font
+fi
 echo "Done. Restart the app with: npx expo start"

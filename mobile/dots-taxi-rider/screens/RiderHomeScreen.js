@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { money } from '../lib/format';
 import {
   Screen,
@@ -635,12 +635,12 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   quoteHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  meta: { fontSize: 12, fontWeight: '600', color: colors.muted },
-  quoteFare: { fontSize: 30, fontWeight: '800', letterSpacing: -0.6, color: colors.ink, marginTop: -4 },
+  meta: { fontSize: 12, ...weight('600'), color: colors.muted },
+  quoteFare: { fontSize: 30, ...weight('800'), letterSpacing: -0.6, color: colors.ink, marginTop: -4 },
   breakdown: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 10, gap: 6 },
-  statusText: { fontSize: 21, fontWeight: '800', letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
-  rideFare: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4, color: colors.green },
+  statusText: { fontSize: 21, ...weight('800'), letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
+  rideFare: { fontSize: 22, ...weight('800'), letterSpacing: -0.4, color: colors.green },
   pay: { gap: 8, alignItems: 'center' },
-  payLead: { fontSize: 14, color: colors.muted },
-  payAmount: { fontSize: 38, fontWeight: '800', letterSpacing: -0.8, color: colors.ink },
+  payLead: { ...weight('400'), fontSize: 14, color: colors.muted },
+  payAmount: { fontSize: 38, ...weight('800'), letterSpacing: -0.8, color: colors.ink },
 });

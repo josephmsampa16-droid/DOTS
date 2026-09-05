@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { kwacha, money } from '../lib/format';
 import {
   Screen,
@@ -650,25 +650,25 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statusText: { fontSize: 17, fontWeight: '700', color: colors.ink },
-  vehicle: { fontSize: 12, color: colors.muted },
+  statusText: { fontSize: 17, ...weight('700'), color: colors.ink },
+  vehicle: { ...weight('400'), fontSize: 12, color: colors.muted },
   statusRight: { alignItems: 'flex-end', gap: 8 },
-  credit: { fontSize: 13, fontWeight: '800', color: colors.green },
-  creditEmpty: { color: colors.red },
+  credit: { fontSize: 13, ...weight('800'), color: colors.green },
+  creditEmpty: { ...weight('400'), color: colors.red },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  meta: { fontSize: 12, fontWeight: '600', color: colors.muted },
-  stageTitle: { fontSize: 21, fontWeight: '800', letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
+  meta: { fontSize: 12, ...weight('600'), color: colors.muted },
+  stageTitle: { fontSize: 21, ...weight('800'), letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
   fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 2 },
-  fare: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4, color: colors.green },
-  countdown: { fontSize: 14, fontWeight: '800', color: colors.green },
-  expired: { fontSize: 14, fontWeight: '800', color: colors.red },
+  fare: { fontSize: 24, ...weight('800'), letterSpacing: -0.4, color: colors.green },
+  countdown: { fontSize: 14, ...weight('800'), color: colors.green },
+  expired: { fontSize: 14, ...weight('800'), color: colors.red },
   collect: { gap: 10, alignItems: 'center' },
-  collectAmount: { fontSize: 36, fontWeight: '800', letterSpacing: -0.8, color: colors.ink },
+  collectAmount: { fontSize: 36, ...weight('800'), letterSpacing: -0.8, color: colors.ink },
   split: { alignSelf: 'stretch', marginTop: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line, gap: 6 },
   splitRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  splitLabel: { fontSize: 14, color: colors.muted },
-  splitValue: { fontSize: 14, fontWeight: '700', color: colors.muted },
-  splitStrong: { fontSize: 16, fontWeight: '800', color: colors.ink },
-  splitStrongValue: { fontSize: 18, fontWeight: '800', color: colors.green },
-  waiting: { textAlign: 'center', marginTop: 12, color: colors.muted },
+  splitLabel: { ...weight('400'), fontSize: 14, color: colors.muted },
+  splitValue: { fontSize: 14, ...weight('700'), color: colors.muted },
+  splitStrong: { fontSize: 16, ...weight('800'), color: colors.ink },
+  splitStrongValue: { fontSize: 18, ...weight('800'), color: colors.green },
+  waiting: { ...weight('400'), textAlign: 'center', marginTop: 12, color: colors.muted },
 });

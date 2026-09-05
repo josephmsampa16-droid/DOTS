@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { Screen, Card, Field, PrimaryButton } from '../components/ui';
 
 export default function LoginScreen() {
@@ -94,9 +94,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3, color: colors.ink, marginTop: 6 },
+  title: { fontSize: 24, ...weight('800'), letterSpacing: -0.3, color: colors.ink, marginTop: 6 },
   form: { gap: 18 },
   switch: { alignItems: 'center', paddingVertical: 10 },
-  switchText: { color: colors.muted, fontSize: 14 },
-  switchLink: { color: colors.brand, fontWeight: '800' },
+  switchText: { ...weight('400'), color: colors.muted, fontSize: 14 },
+  switchLink: { color: colors.brand, ...weight('800') },
 });

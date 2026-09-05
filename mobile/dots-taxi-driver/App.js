@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Image, ActivityIndicator, StyleSheet } from 'react-native';
+import { useFonts } from 'expo-font';
+import { FONT_FILES } from './lib/fonts';
 import { supabase } from './lib/supabase';
 import { registerForPushNotifications } from './lib/push';
 import { colors } from './lib/theme';
@@ -87,6 +89,10 @@ function MainTabs({ session }) {
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Hold the splash until the faces are in, so no screen ever paints in the
+  // system font and then jumps. A load error is not fatal: the app goes on
+  // in the system font rather than stranding the driver on a splash.
+  const [fontsLoaded, fontError] = useFonts(FONT_FILES);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -111,10 +117,11 @@ export default function App() {
     registerForPushNotifications(session.user.id);
   }, [session?.user?.id]);
 
-  if (loading) {
+  if (loading || (!fontsLoaded && !fontError)) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.brand} />
+      <View style={styles.splash}>
+        <Image source={require('./assets/dots-logo-white.png')} style={styles.splashLogo} resizeMode="contain" />
+        <ActivityIndicator color={colors.white} style={{ marginTop: 24 }} />
       </View>
     );
   }
@@ -123,7 +130,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+  splash: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.brand },
+  splashLogo: { width: 180, height: 45 },
   shell: { flex: 1, backgroundColor: colors.bg },
   panes: { flex: 1 },
   pane: { flex: 1 },

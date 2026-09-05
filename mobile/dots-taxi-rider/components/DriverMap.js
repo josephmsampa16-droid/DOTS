@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
 
+import { weight } from '../lib/theme';
 // Live view of the matched driver on their way to the rider.
 //
 // The driver web app (index.html) pushes its position into
@@ -185,9 +186,9 @@ const styles = StyleSheet.create({
   },
   map: { height: 240, width: '100%' },
   placeholder: { height: 120, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  placeholderText: { color: '#5C584F', fontSize: 14, textAlign: 'center' },
+  placeholderText: { ...weight('400'), color: '#5C584F', fontSize: 14, textAlign: 'center' },
   footer: { padding: 12 },
-  vehicleText: { fontSize: 14, fontWeight: '600', color: '#14251F', textAlign: 'center' },
-  updateText: { fontSize: 12, color: '#8A8578', textAlign: 'center', marginTop: 4 },
-  updateTextStale: { color: '#B0473F' },
+  vehicleText: { fontSize: 14, ...weight('600'), color: '#14251F', textAlign: 'center' },
+  updateText: { ...weight('400'), fontSize: 12, color: '#8A8578', textAlign: 'center', marginTop: 4 },
+  updateTextStale: { ...weight('400'), color: '#B0473F' },
 });

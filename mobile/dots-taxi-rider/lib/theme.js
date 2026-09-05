@@ -30,20 +30,40 @@ export const colors = {
   white: '#ffffff',
 };
 
+export const fonts = {
+  regular: 'NunitoSans-Regular',
+  semibold: 'NunitoSans-SemiBold',
+  bold: 'NunitoSans-Bold',
+  extrabold: 'NunitoSans-ExtraBold',
+};
+
+// Pick the Nunito Sans face for a CSS-style weight. Returns fontFamily only:
+// pairing a custom family with a numeric fontWeight makes iOS discard the
+// custom font and render the system one.
+const FACE = {
+  400: fonts.regular, normal: fonts.regular,
+  500: fonts.semibold, 600: fonts.semibold,
+  700: fonts.bold, bold: fonts.bold,
+  800: fonts.extrabold, 900: fonts.extrabold,
+};
+export function weight(w) {
+  return { fontFamily: FACE[w] ?? fonts.regular };
+}
+
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 18, xxl: 24 };
 export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
 export const type = {
-  label: { fontSize: 12, fontWeight: '800', letterSpacing: 1, color: colors.brand },
-  labelLg: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, color: colors.brand },
-  title: { fontSize: 21, fontWeight: '800', letterSpacing: -0.2, color: colors.ink },
-  screenTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3, color: colors.ink },
-  body: { fontSize: 15, fontWeight: '600', color: colors.ink },
-  bodyRegular: { fontSize: 15, fontWeight: '400', color: colors.ink },
-  small: { fontSize: 13, color: colors.muted },
-  tiny: { fontSize: 12, color: colors.muted },
-  money: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4, color: colors.green },
-  moneyXl: { fontSize: 40, fontWeight: '800', letterSpacing: -1, color: colors.ink },
+  label: { fontSize: 12, ...weight('800'), letterSpacing: 1, color: colors.brand },
+  labelLg: { fontSize: 13, ...weight('800'), letterSpacing: 0.5, color: colors.brand },
+  title: { fontSize: 21, ...weight('800'), letterSpacing: -0.2, color: colors.ink },
+  screenTitle: { fontSize: 24, ...weight('800'), letterSpacing: -0.3, color: colors.ink },
+  body: { fontSize: 15, ...weight('600'), color: colors.ink },
+  bodyRegular: { fontSize: 15, ...weight('400'), color: colors.ink },
+  small: { ...weight('400'), fontSize: 13, color: colors.muted },
+  tiny: { ...weight('400'), fontSize: 12, color: colors.muted },
+  money: { fontSize: 24, ...weight('800'), letterSpacing: -0.4, color: colors.green },
+  moneyXl: { fontSize: 40, ...weight('800'), letterSpacing: -1, color: colors.ink },
 };
 
 export const shadow = {

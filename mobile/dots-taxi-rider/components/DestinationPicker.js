@@ -10,6 +10,7 @@ import {
 import MapView from 'react-native-maps';
 import { describeCoords } from '../lib/geocoding';
 
+import { weight } from '../lib/theme';
 // Pick a destination by moving the map under a fixed centre pin.
 //
 // This exists because typed addresses cannot be trusted to price a ride. The OS
@@ -119,7 +120,7 @@ export default function DestinationPicker({ visible, origin, onCancel, onConfirm
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   centre: { alignItems: 'center', justifyContent: 'center' },
-  waiting: { marginTop: 10, color: '#6B675E' },
+  waiting: { ...weight('400'), marginTop: 10, color: '#6B675E' },
   pinLayer: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -144,8 +145,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
-  sheetLabel: { marginTop: 6, marginBottom: 14, color: '#6B675E', minHeight: 34 },
+  sheetTitle: { fontSize: 16, ...weight('700'), color: '#111' },
+  sheetLabel: { ...weight('400'), marginTop: 6, marginBottom: 14, color: '#6B675E', minHeight: 34 },
   confirm: {
     backgroundColor: '#1B2A6B',
     borderRadius: 10,
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmDisabled: { opacity: 0.4 },
-  confirmText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  confirmText: { color: '#fff', ...weight('700'), fontSize: 16 },
   cancel: { padding: 12, alignItems: 'center' },
-  cancelText: { color: '#6B675E' },
+  cancelText: { ...weight('400'), color: '#6B675E' },
 });

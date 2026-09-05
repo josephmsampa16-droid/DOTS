@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, weight } from '../lib/theme';
 import { kwacha } from '../lib/format';
 import { Screen, Card, Label, Field, PrimaryButton, Row, Hint } from '../components/ui';
 
@@ -270,8 +270,8 @@ export default function WalletScreen({ session, active, onBalanceChange }) {
 }
 
 const styles = StyleSheet.create({
-  balance: { fontSize: 40, fontWeight: '800', letterSpacing: -1, color: colors.ink, lineHeight: 44 },
-  warn: { color: colors.red, fontWeight: '700', marginTop: 6, lineHeight: 19 },
+  balance: { fontSize: 40, ...weight('800'), letterSpacing: -1, color: colors.ink, lineHeight: 44 },
+  warn: { color: colors.red, ...weight('700'), marginTop: 6, lineHeight: 19 },
   bundles: { flexDirection: 'row', gap: 8 },
   bundle: {
     flex: 1,
@@ -283,11 +283,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   bundleOn: { borderColor: colors.brand, backgroundColor: colors.brand },
-  bundleAmount: { fontSize: 18, fontWeight: '800', color: colors.ink },
-  bundleTextOn: { color: colors.white },
-  bundleSub: { fontSize: 11, fontWeight: '600', color: colors.muted },
-  bundleSubOn: { color: colors.onBrandMuted },
-  message: { color: colors.ink, lineHeight: 20 },
-  messageGood: { color: colors.green, fontWeight: '600' },
-  messageBad: { color: colors.red, fontWeight: '600' },
+  bundleAmount: { fontSize: 18, ...weight('800'), color: colors.ink },
+  bundleTextOn: { ...weight('400'), color: colors.white },
+  bundleSub: { fontSize: 11, ...weight('600'), color: colors.muted },
+  bundleSubOn: { ...weight('400'), color: colors.onBrandMuted },
+  message: { ...weight('400'), color: colors.ink, lineHeight: 20 },
+  messageGood: { color: colors.green, ...weight('600') },
+  messageBad: { color: colors.red, ...weight('600') },
 });

@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   Switch,
 } from 'react-native';
-import { colors, spacing, radius, type, shadow } from '../lib/theme';
+import { colors, spacing, radius, type, shadow, weight } from '../lib/theme';
 import { ArrowIcon, ChevronIcon, DotIcon, PinIcon } from './icons';
 
 // The building blocks every screen is made from. Screens compose these and
@@ -140,7 +140,7 @@ export function SecondaryButton({ title, onPress, disabled = false, style, tone 
 export function Row({ label, value, color, strong = false, style }) {
   return (
     <View style={[styles.row, style]}>
-      <Text style={[styles.rowLabel, color && { color, fontWeight: '700' }]}>{label}</Text>
+      <Text style={[styles.rowLabel, color && { color, ...weight('700') }]}>{label}</Text>
       <Text style={[styles.rowValue, strong && styles.rowValueStrong, color && { color }]}>{value}</Text>
     </View>
   );
@@ -198,7 +198,7 @@ export function TabStrip({ items, active, onChange }) {
             activeOpacity={0.8}
           >
             {Icon ? <Icon size={22} color={color} /> : null}
-            <Text style={[styles.stripText, { color, fontWeight: on ? '700' : '600' }]}>{label}</Text>
+            <Text style={[styles.stripText, { color, ...weight(on ? '700' : '600') }]}>{label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -223,7 +223,7 @@ export function TabBar({ items, active, onChange }) {
             accessibilityState={{ selected: on }}
           >
             <Icon size={24} color={color} />
-            <Text style={[styles.tabText, { color, fontWeight: on ? '700' : '600' }]}>{label}</Text>
+            <Text style={[styles.tabText, { color, ...weight(on ? '700' : '600') }]}>{label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -312,13 +312,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logo: { width: 128, height: 32 },
-  role: { fontSize: 11, fontWeight: '800', letterSpacing: 2.5, color: colors.onBrandMuted },
+  role: { fontSize: 11, ...weight('800'), letterSpacing: 2.5, color: colors.onBrandMuted },
   body: { padding: spacing.xl, paddingBottom: 32, gap: 14 },
 
   card: { backgroundColor: colors.card, borderRadius: radius.lg, ...shadow.card },
 
   field: { gap: 6, borderBottomWidth: 1, borderBottomColor: colors.rule, paddingBottom: 8 },
-  fieldInput: { fontSize: 17, fontWeight: '600', color: colors.ink, padding: 0, margin: 0 },
+  fieldInput: { fontSize: 17, ...weight('600'), color: colors.ink, padding: 0, margin: 0 },
 
   primary: {
     backgroundColor: colors.brandMid,
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   },
   primaryOff: { opacity: 0.45 },
   primaryInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  primaryText: { color: colors.white, fontSize: 17, fontWeight: '800', letterSpacing: 1.5 },
+  primaryText: { color: colors.white, fontSize: 17, ...weight('800'), letterSpacing: 1.5 },
 
   secondary: {
     borderWidth: 1.5,
@@ -340,23 +340,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 18,
   },
-  secondaryText: { fontSize: 14, fontWeight: '700' },
+  secondaryText: { fontSize: 14, ...weight('700') },
 
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
-  rowLabel: { fontSize: 13, color: colors.muted, flexShrink: 1 },
-  rowValue: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  rowValueStrong: { fontSize: 15, fontWeight: '800' },
+  rowLabel: { ...weight('400'), fontSize: 13, color: colors.muted, flexShrink: 1 },
+  rowValue: { fontSize: 13, ...weight('700'), color: colors.ink },
+  rowValueStrong: { fontSize: 15, ...weight('800') },
 
   stat: { flex: 1, gap: 4 },
-  statValue: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4, color: colors.ink },
+  statValue: { fontSize: 22, ...weight('800'), letterSpacing: -0.4, color: colors.ink },
 
   chip: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: 10 },
-  chipText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  chipText: { fontSize: 11, ...weight('800'), letterSpacing: 0.5 },
 
   strip: { flexDirection: 'row', marginHorizontal: spacing.xl, borderBottomWidth: 1, borderBottomColor: '#d9d9d9' },
   stripItem: { flex: 1, alignItems: 'center', gap: 6, paddingTop: 14, paddingBottom: 12 },
   stripItemOn: { backgroundColor: colors.brand, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
-  stripText: { fontSize: 14 },
+  stripText: { ...weight('400'), fontSize: 14 },
 
   tabBar: {
     flexDirection: 'row',
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   tabItem: { flex: 1, alignItems: 'center', gap: 5, minHeight: 44, justifyContent: 'center' },
-  tabText: { fontSize: 12 },
+  tabText: { ...weight('400'), fontSize: 12 },
 
   timeline: { flexDirection: 'row', gap: 16 },
   rail: { width: 30, alignItems: 'center', paddingTop: 8, paddingBottom: 6 },
@@ -377,17 +377,17 @@ const styles = StyleSheet.create({
 
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line, minHeight: 48 },
   linkRowLast: { borderBottomWidth: 0 },
-  linkText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  linkText: { flex: 1, fontSize: 15, ...weight('600') },
 
   empty: { alignItems: 'center', paddingVertical: 28, gap: 6 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
-  emptyBody: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 16, ...weight('700'), color: colors.ink },
+  emptyBody: { ...weight('400'), fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
 
-  hint: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  hint: { ...weight('400'), fontSize: 13, color: colors.muted, lineHeight: 19 },
 
   notice: { borderRadius: radius.md, padding: 14, gap: 4 },
-  noticeTitle: { fontSize: 14, fontWeight: '800' },
-  noticeBody: { fontSize: 13, lineHeight: 18 },
+  noticeTitle: { fontSize: 14, ...weight('800') },
+  noticeBody: { ...weight('400'), fontSize: 13, lineHeight: 18 },
 
   progress: { flexDirection: 'row', gap: 6 },
   progressSeg: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.line },
