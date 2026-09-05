@@ -1,14 +1,8 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors } from '../lib/theme';
+import { Screen, Card, Field, PrimaryButton } from '../components/ui';
 
 export default function LoginScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -55,80 +49,54 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>DOTS Taxi</Text>
-      <Text style={styles.subtitle}>{isSignUp ? 'Driver Sign Up' : 'Driver Login'}</Text>
+    <Screen role="DRIVER" keyboard>
+      <Text style={styles.title}>{isSignUp ? 'Create your driver account' : 'Welcome back'}</Text>
 
-      {isSignUp && (
-        <>
-          <TextInput
-            style={styles.input}
-            placeholder="Full name"
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
-        </>
-      )}
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-
-      <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={loading}>
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>{isSignUp ? 'Sign Up' : 'Log In'}</Text>
+      <Card style={styles.form}>
+        {isSignUp && (
+          <>
+            <Field label="FULL NAME" value={name} onChangeText={setName} placeholder="As on your licence" />
+            <Field label="PHONE" value={phone} onChangeText={setPhone} placeholder="097 000 0000" keyboardType="phone-pad" />
+          </>
         )}
-      </TouchableOpacity>
+        <Field
+          label="EMAIL"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoComplete="email"
+        />
+        <Field
+          label="PASSWORD"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="••••••••"
+          secureTextEntry
+        />
+        <PrimaryButton
+          title={isSignUp ? 'SIGN UP' : 'LOG IN'}
+          onPress={handleSubmit}
+          busy={loading}
+          style={{ marginTop: 6 }}
+        />
+      </Card>
 
-      <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
+      <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={styles.switch}>
         <Text style={styles.switchText}>
-          {isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up"}
+          {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+          <Text style={styles.switchLink}>{isSignUp ? 'Log in' : 'Sign up'}</Text>
         </Text>
       </TouchableOpacity>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 24 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  switchText: { textAlign: 'center', marginTop: 16, color: '#111' },
+  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3, color: colors.ink, marginTop: 6 },
+  form: { gap: 18 },
+  switch: { alignItems: 'center', paddingVertical: 10 },
+  switchText: { color: colors.muted, fontSize: 14 },
+  switchLink: { color: colors.brand, fontWeight: '800' },
 });

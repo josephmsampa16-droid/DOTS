@@ -2,18 +2,31 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  Switch,
-  TextInput,
   StyleSheet,
-  TouchableOpacity,
-  Alert,
   ActivityIndicator,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { colors } from '../lib/theme';
+import { kwacha, money } from '../lib/format';
+import {
+  Screen,
+  Card,
+  Label,
+  Field,
+  PrimaryButton,
+  SecondaryButton,
+  Toggle,
+  Timeline,
+  FieldStatic,
+  Progress,
+  Notice,
+  Hint,
+} from '../components/ui';
 import { unregisterPushNotifications } from '../lib/push';
 import { Notifications, pushSupported } from '../lib/pushModule';
-import TokensScreen from './TokensScreen';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
 
 // Matches the ~8s throttle the web driver app uses.
@@ -56,7 +69,7 @@ const TRIP_STEP_COUNT = 3;
 
 const OFFER_TIMEOUT_SECONDS = 45;
 
-export default function DriverHomeScreen({ session }) {
+export default function DriverHomeScreen({ session, onNavigate, logoutRef, refreshSignal }) {
   const driverId = session.user.id;
 
   const [taxi, setTaxi] = useState(null);
@@ -66,7 +79,6 @@ export default function DriverHomeScreen({ session }) {
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [backgroundTracking, setBackgroundTracking] = useState(false);
   const [tokenBalance, setTokenBalance] = useState(null);
-  const [tokensOpen, setTokensOpen] = useState(false);
   // The just-finished ride, kept after `activeRide` clears so the driver still
   // has the amount on screen to read out and collect.
   const [finishedRide, setFinishedRide] = useState(null);
@@ -433,6 +445,17 @@ export default function DriverHomeScreen({ session }) {
     await supabase.auth.signOut();
   };
 
+  // Account's Log out has to do everything this screen's does — taxi offline,
+  // tracking stopped, push token removed — so it borrows this function.
+  useEffect(() => {
+    if (logoutRef) logoutRef.current = handleLogout;
+  });
+
+  // A top-up on the Wallet tab changes the number shown here.
+  useEffect(() => {
+    if (refreshSignal) fetchTokenBalance();
+  }, [refreshSignal, fetchTokenBalance]);
+
   const offerExpired = secondsLeft === 0;
 
   // Null unless a trip is underway, which is exactly when the stage card shows.
@@ -447,391 +470,205 @@ export default function DriverHomeScreen({ session }) {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
 
+  const outOfCredit = tokenBalance != null && tokenBalance <= 0;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>DOTS Taxi Driver</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.tokenChip, (tokenBalance != null && tokenBalance <= 0) && styles.tokenChipEmpty]}
-            onPress={() => setTokensOpen(true)}
-          >
-            <Text style={[styles.tokenChipText, (tokenBalance != null && tokenBalance <= 0) && styles.tokenChipTextEmpty]}>
-              {tokenBalance == null ? '—' : `K${tokenBalance.toFixed(2)}`}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.logout}>Log out</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <TokensScreen
-        visible={tokensOpen}
-        session={session}
-        balance={tokenBalance}
-        onClose={() => setTokensOpen(false)}
-        onBalanceChange={fetchTokenBalance}
-      />
-
+    <Screen role="DRIVER" keyboard>
       {!taxi ? (
-        <View>
-          <Text style={styles.sectionTitle}>Register your vehicle</Text>
-          <Text style={styles.hint}>
-            You need a registered vehicle before you can go online.
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Plate number"
-            value={plate}
-            onChangeText={setPlate}
-            autoCapitalize="characters"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Model"
-            value={model}
-            onChangeText={setModel}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Colour (optional)"
-            value={color}
-            onChangeText={setColor}
-          />
-          <TouchableOpacity style={styles.button} onPress={addTaxi} disabled={busy}>
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Save vehicle</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <Card style={{ gap: 16 }}>
+          <Label>REGISTER YOUR VEHICLE</Label>
+          <Hint>You need a registered vehicle before you can go online.</Hint>
+          <Field label="PLATE NUMBER" value={plate} onChangeText={setPlate} autoCapitalize="characters" placeholder="e.g. BAX 1234" />
+          <Field label="MODEL" value={model} onChangeText={setModel} placeholder="e.g. Honda Fit 2009" />
+          <Field label="COLOUR (OPTIONAL)" value={color} onChangeText={setColor} placeholder="e.g. Black" />
+          <PrimaryButton title="SAVE VEHICLE" onPress={addTaxi} busy={busy} />
+        </Card>
       ) : (
         <>
-          <Text style={styles.taxiLine}>
-            {taxi.plate} — {taxi.model}
-            {taxi.color ? ` (${taxi.color})` : ''}
-          </Text>
-
-          {(tokenBalance != null && tokenBalance <= 0) && (
-            <TouchableOpacity style={styles.emptyBanner} onPress={() => setTokensOpen(true)}>
-              <Text style={styles.emptyBannerTitle}>You are out of credit</Text>
-              <Text style={styles.emptyBannerBody}>
-                Ride requests will not reach you until you top up. Tap to buy.
-              </Text>
-            </TouchableOpacity>
+          {outOfCredit && (
+            <Notice
+              tone="red"
+              title="You are out of credit"
+              body="Ride requests will not reach you until you top up. Tap to open your wallet."
+              onPress={() => onNavigate?.('wallet')}
+            />
           )}
 
-          <View style={styles.statusCard}>
-            <Text style={styles.statusLabel}>{isOnline ? 'Online' : 'Offline'}</Text>
-            <Switch value={isOnline} onValueChange={toggleOnline} disabled={busy} />
-          </View>
-
-          {isOnline && (
-            <Text style={styles.trackingNote}>
-              {backgroundTracking
-                ? 'Background location on — requests reach you with the app closed.'
-                : 'Foreground only — keep this app open to receive requests.'}
-            </Text>
-          )}
-
-          {busy && <ActivityIndicator style={{ marginTop: 12 }} />}
-
-          {activeRide?.status === 'matched' && (
-            <View style={styles.rideCard}>
-              <Text style={styles.rideTitle}>New Ride Request</Text>
-              <Text style={styles.rideDetail}>Pickup: {pickupLabel}</Text>
-              <Text style={styles.rideDetail}>
-                Drop-off: {activeRide.dest_address || 'Not specified'}
-              </Text>
-              <Text style={offerExpired ? styles.expiredText : styles.countdownText}>
-                {offerExpired
-                  ? 'Offer expired — passing to another driver…'
-                  : `Respond within ${secondsLeft ?? OFFER_TIMEOUT_SECONDS}s`}
-              </Text>
-              <View style={styles.rideActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.rideButton,
-                    styles.acceptButton,
-                    offerExpired && styles.disabledButton,
-                  ]}
-                  onPress={acceptRide}
-                  disabled={busy || offerExpired}
-                >
-                  <Text style={styles.rideButtonText}>Accept</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.rideButton,
-                    styles.declineButton,
-                    offerExpired && styles.disabledButton,
-                  ]}
-                  onPress={declineRide}
-                  disabled={busy || offerExpired}
-                >
-                  <Text style={styles.rideButtonText}>Decline</Text>
+          <Card>
+            <View style={styles.statusRow}>
+              <View style={{ gap: 3, flex: 1 }}>
+                <Label>STATUS</Label>
+                <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
+                <Text style={styles.vehicle} numberOfLines={1}>
+                  {taxi.plate} · {taxi.model}
+                  {taxi.color ? ` · ${taxi.color}` : ''}
+                </Text>
+              </View>
+              <View style={styles.statusRight}>
+                <Toggle value={isOnline} onValueChange={toggleOnline} disabled={busy} />
+                <TouchableOpacity onPress={() => onNavigate?.('wallet')} hitSlop={8}>
+                  <Text style={[styles.credit, outOfCredit && styles.creditEmpty]}>
+                    {tokenBalance == null ? '—' : `${kwacha(tokenBalance)} credit`}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
+            {isOnline && (
+              <Hint style={{ marginTop: 10 }}>
+                {backgroundTracking
+                  ? 'Background location on — requests reach you with the app closed.'
+                  : 'Foreground only — keep this app open to receive requests.'}
+              </Hint>
+            )}
+          </Card>
+
+          {busy && !activeRide && <ActivityIndicator color={colors.brand} />}
+
+          {activeRide?.status === 'matched' && (
+            <Card style={{ gap: 14 }}>
+              <View style={styles.cardHead}>
+                <Label>NEW RIDE REQUEST</Label>
+                <Text style={offerExpired ? styles.expired : styles.countdown}>
+                  {offerExpired ? 'Expired' : `${secondsLeft ?? OFFER_TIMEOUT_SECONDS}s`}
+                </Text>
+              </View>
+              <Timeline
+                top={<FieldStatic label="PICKUP" value={pickupLabel} />}
+                bottom={<FieldStatic label="DROP-OFF" value={activeRide.dest_address || 'Not specified'} muted={!activeRide.dest_address} />}
+              />
+              {activeRide.fare != null && (
+                <View style={styles.fareRow}>
+                  <Label>FARE</Label>
+                  <Text style={styles.fare}>{money(activeRide.fare, activeRide.currency)}</Text>
+                </View>
+              )}
+              {offerExpired ? (
+                <Hint>Offer expired — passing to another driver…</Hint>
+              ) : (
+                <Hint>Respond before the timer runs out or it goes to the next driver.</Hint>
+              )}
+              <PrimaryButton
+                title="ACCEPT"
+                onPress={acceptRide}
+                disabled={busy || offerExpired}
+                busy={busy}
+              />
+              <SecondaryButton
+                title="Decline"
+                onPress={declineRide}
+                disabled={busy || offerExpired}
+              />
+            </Card>
           )}
 
           {stage && (
-            <View style={styles.rideCard}>
-              <View style={styles.stageHeader}>
-                <Text style={styles.rideTitle}>{stage.title}</Text>
-                <Text style={styles.stageStep}>
-                  Step {stage.step} of {TRIP_STEP_COUNT}
-                </Text>
-              </View>
-
-              <View style={styles.stageTrack}>
-                {Array.from({ length: TRIP_STEP_COUNT }, (_, i) => (
-                  <View
-                    key={i}
-                    style={[styles.stageDot, i < stage.step && styles.stageDotDone]}
-                  />
-                ))}
-              </View>
-
-              <Text style={styles.rideDetail}>Pickup: {pickupLabel}</Text>
-              <Text style={styles.rideDetail}>
-                Drop-off: {activeRide.dest_address || 'Not specified'}
-              </Text>
-
-              {activeRide.fare != null && (
-                <Text style={styles.rideFare}>
-                  Fare {activeRide.currency} {Number(activeRide.fare).toFixed(2)}
-                  <Text style={styles.rideFareMuted}>
-                    {'  '}({Number(activeRide.distance_km).toFixed(1)} km)
+            <Card style={{ gap: 14 }}>
+              <View style={styles.cardHead}>
+                <Label>{`STEP ${stage.step} OF ${TRIP_STEP_COUNT}`}</Label>
+                {activeRide.distance_km != null && (
+                  <Text style={styles.meta}>
+                    {Number(activeRide.distance_km).toFixed(1)} km
+                    {activeRide.duration_min != null
+                      ? ` · ${Math.round(Number(activeRide.duration_min))} min`
+                      : ''}
                   </Text>
-                </Text>
-              )}
-
-              <Text style={styles.stageHint}>{stage.hint}</Text>
-
-              {/* One button, labelled with the thing it actually does. It must
-                  not carry styles.rideButton: that has flex:1 for the two-up
-                  Accept/Decline row, which in this column collapses the button
-                  to its padding and clips the label away. */}
-              <TouchableOpacity
-                style={[styles.stageButton, busy && styles.stageButtonBusy]}
-                onPress={() => advanceRide(stage.next, stage.stamp)}
-                disabled={busy}
-                activeOpacity={0.85}
-              >
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.stageButtonText}>{stage.action}</Text>
                 )}
-              </TouchableOpacity>
-            </View>
+              </View>
+              <Text style={styles.stageTitle}>{stage.title}</Text>
+              <Progress steps={TRIP_STEP_COUNT} done={stage.step} />
+              <Timeline
+                top={<FieldStatic label="PICKUP" value={pickupLabel} />}
+                bottom={<FieldStatic label="DROP-OFF" value={activeRide.dest_address || 'Not specified'} muted={!activeRide.dest_address} />}
+              />
+              {activeRide.fare != null && (
+                <View style={styles.fareRow}>
+                  <Label>FARE</Label>
+                  <Text style={styles.fare}>{money(activeRide.fare, activeRide.currency)}</Text>
+                </View>
+              )}
+              <Hint>{stage.hint}</Hint>
+              <PrimaryButton
+                title={stage.action.toUpperCase()}
+                onPress={() => advanceRide(stage.next, stage.stamp)}
+                busy={busy}
+              />
+            </Card>
           )}
 
           {/* Held on screen after completion so the driver can read the amount
               out to the rider and collect it, rather than the card vanishing. */}
           {finishedRide && (
-            <View style={styles.collectCard}>
-              <Text style={styles.collectTitle}>Trip completed</Text>
+            <Card style={styles.collect}>
+              <Label style={{ color: colors.green }}>TRIP COMPLETED</Label>
               <Text style={styles.collectAmount}>
-                {finishedRide.fare != null
-                  ? `${finishedRide.currency} ${Number(finishedRide.fare).toFixed(2)}`
-                  : 'Fare not priced'}
+                {finishedRide.fare != null ? money(finishedRide.fare, finishedRide.currency) : 'Fare not priced'}
               </Text>
-              <Text style={styles.collectBody}>
+              <Hint style={{ textAlign: 'center' }}>
                 {finishedRide.fare != null
                   ? 'Collect this amount from the rider in cash.'
                   : 'No distance was recorded, so agree the fare with the rider.'}
-              </Text>
+              </Hint>
 
               {/* What the ride actually earned, once DOTS's share is out. The
                   driver should never have to work this out themselves. */}
               {finishedRide.driver_payout != null && (
-                <View style={styles.splitBox}>
+                <View style={styles.split}>
                   <View style={styles.splitRow}>
                     <Text style={styles.splitLabel}>
                       DOTS {(Number(finishedRide.commission_rate) * 100).toFixed(0)}%
                     </Text>
                     <Text style={styles.splitValue}>
-                      -{finishedRide.currency} {Number(finishedRide.commission_amount).toFixed(2)}
+                      −{money(finishedRide.commission_amount, finishedRide.currency)}
                     </Text>
                   </View>
                   <View style={styles.splitRow}>
-                    <Text style={styles.splitLabelStrong}>You keep</Text>
-                    <Text style={styles.splitValueStrong}>
-                      {finishedRide.currency} {Number(finishedRide.driver_payout).toFixed(2)}
+                    <Text style={styles.splitStrong}>You keep</Text>
+                    <Text style={styles.splitStrongValue}>
+                      {money(finishedRide.driver_payout, finishedRide.currency)}
                     </Text>
                   </View>
                 </View>
               )}
-              <TouchableOpacity
-                style={styles.collectDone}
-                onPress={() => setFinishedRide(null)}
-              >
-                <Text style={styles.collectDoneText}>Done</Text>
-              </TouchableOpacity>
-            </View>
+              <PrimaryButton title="DONE" onPress={() => setFinishedRide(null)} arrow={false} />
+            </Card>
           )}
 
-          {isOnline && !activeRide && (
-            <Text style={styles.waitingText}>Waiting for ride requests…</Text>
+          {isOnline && !activeRide && !finishedRide && (
+            <Text style={styles.waiting}>Waiting for ride requests…</Text>
           )}
         </>
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 24,
-  },
-  title: { fontSize: 22, fontWeight: '700' },
-  logout: { color: '#c00', fontSize: 14 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  tokenChip: {
-    backgroundColor: '#EDEFF7',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  tokenChipEmpty: { backgroundColor: '#F6E3E1' },
-  tokenChipText: { color: '#1B2A6B', fontWeight: '700', fontSize: 13 },
-  tokenChipTextEmpty: { color: '#B0473F' },
-  emptyBanner: {
-    backgroundColor: '#F6E3E1',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 14,
-  },
-  emptyBannerTitle: { color: '#B0473F', fontWeight: '800', marginBottom: 2 },
-  emptyBannerBody: { color: '#8A3A34', fontSize: 13 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
-  hint: { color: '#666', marginBottom: 16 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  taxiLine: { fontSize: 15, color: '#444', marginBottom: 12 },
-  statusCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 18,
-  },
-  statusLabel: { fontSize: 18, fontWeight: '600' },
-  rideCard: {
-    marginTop: 24,
-    backgroundColor: '#111',
-    borderRadius: 12,
-    padding: 18,
-  },
-  rideTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  rideDetail: { color: '#ddd', fontSize: 14, marginBottom: 8 },
-  rideActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  rideButton: { flex: 1, borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 8 },
-  acceptButton: { backgroundColor: '#2e7d32' },
-  declineButton: { backgroundColor: '#555' },
-  rideButtonText: { color: '#fff', fontWeight: '600' },
-  stageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  stageStep: { color: '#8d8d8d', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
-  stageTrack: { flexDirection: 'row', gap: 6, marginBottom: 14 },
-  stageDot: { flex: 1, height: 3, borderRadius: 2, backgroundColor: '#2f2f2f' },
-  stageDotDone: { backgroundColor: '#2e7d32' },
-  stageHint: { color: '#9a9a9a', fontSize: 13, marginTop: 14, marginBottom: 4 },
-  stageButton: {
-    marginTop: 10,
-    backgroundColor: '#2e7d32',
-    borderRadius: 28,
-    paddingVertical: 17,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  stageButtonBusy: { opacity: 0.7 },
-  stageButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  rideFare: { color: '#7dd87d', fontSize: 17, fontWeight: '700', marginTop: 4, marginBottom: 4 },
-  rideFareMuted: { color: '#8d8d8d', fontSize: 13, fontWeight: '500' },
-  collectCard: {
-    marginTop: 24,
-    backgroundColor: '#0f2c14',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2e7d32',
-    padding: 20,
-    alignItems: 'center',
-  },
-  collectTitle: { color: '#9fe5a4', fontSize: 14, fontWeight: '600', letterSpacing: 1 },
-  collectAmount: { color: '#fff', fontSize: 34, fontWeight: '800', marginTop: 6 },
-  collectBody: { color: '#cfe8d2', fontSize: 14, textAlign: 'center', marginTop: 10 },
-  collectDone: {
-    marginTop: 16,
-    alignSelf: 'stretch',
-    backgroundColor: '#2e7d32',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  splitBox: {
-    alignSelf: 'stretch',
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#2e7d32',
-    gap: 6,
-  },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statusText: { fontSize: 17, fontWeight: '700', color: colors.ink },
+  vehicle: { fontSize: 12, color: colors.muted },
+  statusRight: { alignItems: 'flex-end', gap: 8 },
+  credit: { fontSize: 13, fontWeight: '800', color: colors.green },
+  creditEmpty: { color: colors.red },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  meta: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  stageTitle: { fontSize: 21, fontWeight: '800', letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
+  fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 2 },
+  fare: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4, color: colors.green },
+  countdown: { fontSize: 14, fontWeight: '800', color: colors.green },
+  expired: { fontSize: 14, fontWeight: '800', color: colors.red },
+  collect: { gap: 10, alignItems: 'center' },
+  collectAmount: { fontSize: 36, fontWeight: '800', letterSpacing: -0.8, color: colors.ink },
+  split: { alignSelf: 'stretch', marginTop: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line, gap: 6 },
   splitRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  splitLabel: { color: '#9fe5a4', fontSize: 14 },
-  splitValue: { color: '#9fe5a4', fontSize: 14, fontWeight: '600' },
-  splitLabelStrong: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  splitValueStrong: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  collectDoneText: { color: '#fff', fontWeight: '700' },
-  trackingNote: { marginTop: 10, fontSize: 12, color: '#6B675E', textAlign: 'center' },
-  countdownText: { color: '#7dd87d', fontSize: 13, fontWeight: '600', marginTop: 4 },
-  expiredText: { color: '#e5a0a0', fontSize: 13, fontWeight: '600', marginTop: 4 },
-  disabledButton: { opacity: 0.4 },
-  waitingText: { textAlign: 'center', marginTop: 32, color: '#888' },
+  splitLabel: { fontSize: 14, color: colors.muted },
+  splitValue: { fontSize: 14, fontWeight: '700', color: colors.muted },
+  splitStrong: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  splitStrongValue: { fontSize: 18, fontWeight: '800', color: colors.green },
+  waiting: { textAlign: 'center', marginTop: 12, color: colors.muted },
 });

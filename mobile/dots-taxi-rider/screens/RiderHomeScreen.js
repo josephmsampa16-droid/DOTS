@@ -2,17 +2,36 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
-  Alert,
   ActivityIndicator,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { colors } from '../lib/theme';
+import { money } from '../lib/format';
+import {
+  Screen,
+  Card,
+  Label,
+  Field,
+  FieldStatic,
+  PrimaryButton,
+  SecondaryButton,
+  Row,
+  Timeline,
+  TabStrip,
+  Hint,
+  Notice,
+} from '../components/ui';
+import { CarIcon, SwapIcon } from '../components/icons';
+
+const TIERS = [
+  { key: 'standard', label: 'Standard', Icon: CarIcon },
+  { key: 'comfort', label: 'Comfort', Icon: CarIcon },
+  { key: 'xl', label: 'XL', Icon: CarIcon },
+];
 import {
   registerForPushNotificationsAsync,
   unregisterPushNotificationsAsync,
@@ -56,7 +75,7 @@ const SETTLED_RIDE_KEY = 'dots.rider.settledRideId';
 // The stages where a driver is assigned and worth showing on the map.
 const DRIVER_ON_MAP_STATUSES = ['matched', 'accepted', 'arrived', 'in_progress'];
 
-export default function RiderHomeScreen({ session }) {
+export default function RiderHomeScreen({ session, logoutRef }) {
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   // Free-text addresses. Both are required: without a destination there is no
@@ -76,6 +95,9 @@ export default function RiderHomeScreen({ session }) {
   // the place the geocoder actually chose, so a typed quote can be checked.
   const [quoteSource, setQuoteSource] = useState(null);
   const [quoteLabel, setQuoteLabel] = useState(null);
+  // Standard, Comfort or XL. Each tier is priced by its own row in the
+  // pricing table; the choice is sent with the quote and again on booking.
+  const [serviceTier, setServiceTier] = useState('standard');
   const [activeRide, setActiveRide] = useState(null);
   // The ride that just finished, held on screen with the amount owed until the
   // rider dismisses it — the fare is the last thing they need, not the first
@@ -247,6 +269,7 @@ export default function RiderHomeScreen({ session }) {
         p_pickup_lng: location.longitude,
         p_dest_lat: coords.latitude,
         p_dest_lng: coords.longitude,
+        p_service_tier: serviceTier,
       });
       if (cancelled) return;
       setQuote(error ? null : data?.[0] ?? null);
@@ -263,7 +286,7 @@ export default function RiderHomeScreen({ session }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [location, destCoords, destAddress]);
+  }, [location, destCoords, destAddress, serviceTier]);
 
   const handleDestinationConfirmed = (picked) => {
     setPickerOpen(false);
@@ -326,6 +349,7 @@ export default function RiderHomeScreen({ session }) {
           dest_address: destination || null,
           dest_lat: resolvedDest.latitude,
           dest_lng: resolvedDest.longitude,
+          service_tier: serviceTier,
         })
         .select()
         .single();
@@ -370,386 +394,253 @@ export default function RiderHomeScreen({ session }) {
   // disabled button is a courtesy and not a guarantee.
   const canRequest = Boolean(location) && Boolean(destCoords || destAddress.trim());
 
+  // Account's Log out borrows this screen's, which also removes the push
+  // token while RLS still allows it.
+  useEffect(() => {
+    if (logoutRef) logoutRef.current = handleLogout;
+  });
+
+  // Swap pickup and drop-off text. A pin belonged to the old drop-off, so it
+  // no longer stands for anything and is cleared.
+  const swapAddresses = () => {
+    setPickupAddress(destAddress);
+    setDestAddress(pickupAddress);
+    setDestCoords(null);
+  };
+
   const routeLine = activeRide
     ? 'From ' +
       (activeRide.pickup_address || 'your location') +
       (activeRide.dest_address ? ' to ' + activeRide.dest_address : '')
     : null;
 
+  const strip = !activeRide ? (
+    <TabStrip items={TIERS} active={serviceTier} onChange={setServiceTier} />
+  ) : null;
+
+  const demandDown = quote?.demand_multiplier != null && Number(quote.demand_multiplier) < 1;
+  const demandUp = quote?.demand_multiplier != null && Number(quote.demand_multiplier) > 1;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>DOTS Taxi Rider</Text>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.logout}>Log out</Text>
-          </TouchableOpacity>
-        </View>
+    <Screen role="RIDER" keyboard strip={strip}>
+      {locationError && <Notice tone="red" title="Location needed" body={locationError} />}
 
-        {locationError && <Text style={styles.errorText}>{locationError}</Text>}
-
-        {!activeRide && (
-          <View style={styles.requestCard}>
-            <Text style={styles.requestTitle}>Ready to go?</Text>
-
-            <Text style={styles.label}>Pickup address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Manda Hill, Lusaka"
-              value={pickupAddress}
-              onChangeText={setPickupAddress}
+      {!activeRide && (
+        <>
+          <Card style={{ paddingBottom: 16 }}>
+            <Timeline
+              top={
+                <Field
+                  label="FROM"
+                  value={pickupAddress}
+                  onChangeText={setPickupAddress}
+                  placeholder={prefillingPickup ? 'Finding your address…' : 'Where are you?'}
+                />
+              }
+              middle={
+                <TouchableOpacity style={styles.swap} onPress={swapAddresses} hitSlop={8}>
+                  <SwapIcon size={14} color={colors.brand} />
+                </TouchableOpacity>
+              }
+              bottom={
+                <Field
+                  label="TO"
+                  value={destAddress}
+                  onChangeText={(text) => {
+                    setDestAddress(text);
+                    // Editing the text means they are describing somewhere
+                    // else, so the old pin no longer stands for what they typed.
+                    if (destCoords) setDestCoords(null);
+                  }}
+                  placeholder="Where do you want to go?"
+                  returnKeyType="done"
+                />
+              }
             />
+          </Card>
 
-            <Text style={styles.label}>Drop-off address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Levy Junction, Lusaka"
-              value={destAddress}
-              onChangeText={(text) => {
-                setDestAddress(text);
-                // Editing the text means they are describing somewhere else, so
-                // the old pin no longer stands for what they typed.
-                if (destCoords) setDestCoords(null);
-              }}
-              returnKeyType="done"
-            />
+          <SecondaryButton
+            title={destCoords ? 'Change destination on map' : 'Set destination on map'}
+            onPress={() => setPickerOpen(true)}
+            disabled={!location}
+          />
 
-            <TouchableOpacity
-              style={[styles.mapButton, !location && styles.buttonDisabled]}
-              onPress={() => setPickerOpen(true)}
-              disabled={!location}
-            >
-              <Text style={styles.mapButtonText}>
-                {destCoords ? 'Change destination on map' : 'Set destination on map'}
-              </Text>
-            </TouchableOpacity>
-
-            {(destCoords || destAddress.trim()) && (
-              <View style={styles.quoteCard}>
-                {quoting ? (
-                  <Text style={styles.quoteMuted}>Working out the fare…</Text>
-                ) : quote?.fare != null ? (
-                  <>
-                    <Text style={styles.quoteFare}>
-                      {quote.currency} {Number(quote.fare).toFixed(2)}
-                    </Text>
-                    <Text style={styles.quoteMuted}>
+          {(destCoords || destAddress.trim()) && (
+            <Card style={{ gap: 10 }}>
+              {quoting ? (
+                <Hint>Working out the fare…</Hint>
+              ) : quote?.fare != null ? (
+                <>
+                  <View style={styles.quoteHead}>
+                    <Label large>FARE</Label>
+                    <Text style={styles.meta}>
                       about {Number(quote.distance_km).toFixed(1)} km
                       {quote.duration_min != null
                         ? ` · around ${Math.round(Number(quote.duration_min))} min`
                         : ''}
                     </Text>
+                  </View>
+                  <Text style={styles.quoteFare}>{money(quote.fare, quote.currency)}</Text>
 
-                    {/* The fare broken into its parts. A rider who can see how
-                        the number was reached has no reason to suspect it. */}
-                    {quote.base_fare != null && (
-                      <View style={styles.breakdown}>
-                        <View style={styles.breakdownRow}>
-                          <Text style={styles.breakdownLabel}>Base fare</Text>
-                          <Text style={styles.breakdownValue}>
-                            {Number(quote.base_fare).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={styles.breakdownRow}>
-                          <Text style={styles.breakdownLabel}>
-                            Distance · {Number(quote.distance_km).toFixed(1)} km
-                          </Text>
-                          <Text style={styles.breakdownValue}>
-                            {Number(quote.distance_charge).toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={styles.breakdownRow}>
-                          <Text style={styles.breakdownLabel}>
-                            Time · {Math.round(Number(quote.duration_min))} min
-                          </Text>
-                          <Text style={styles.breakdownValue}>
-                            {Number(quote.time_charge).toFixed(2)}
-                          </Text>
-                        </View>
-
-                        {/* Only shown when demand actually moved the price, in
-                            either direction — a silent multiplier is the thing
-                            riders resent about other apps. */}
-                        {quote.demand_multiplier != null &&
-                          Number(quote.demand_multiplier) !== 1 && (
-                            <View style={styles.breakdownRow}>
-                              <Text
-                                style={[
-                                  styles.breakdownLabel,
-                                  Number(quote.demand_multiplier) < 1
-                                    ? styles.demandDown
-                                    : styles.demandUp,
-                                ]}
-                              >
-                                {Number(quote.demand_multiplier) < 1
-                                  ? 'Quiet right now — discount'
-                                  : 'Busy right now'}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.breakdownValue,
-                                  Number(quote.demand_multiplier) < 1
-                                    ? styles.demandDown
-                                    : styles.demandUp,
-                                ]}
-                              >
-                                ×{Number(quote.demand_multiplier).toFixed(2)}
-                              </Text>
-                            </View>
-                          )}
-                      </View>
-                    )}
-                    {quoteSource === 'typed' && (
-                      // A typed quote priced whatever the geocoder chose. Naming
-                      // it is what lets the rider notice it picked the wrong one.
-                      <Text style={styles.quoteCheck}>
-                        {quoteLabel ? `Priced to: ${quoteLabel}. ` : ''}
-                        Not right? Set it on the map.
-                      </Text>
-                    )}
-                  </>
-                ) : quoteSource === 'unresolved' ? (
-                  <Text style={styles.quoteWarn}>
-                    Couldn't find that address. Set the destination on the map to
-                    get a price.
-                  </Text>
-                ) : (
-                  // Server withheld a price: past max_trip_km, so the
-                  // destination is almost certainly not the one they meant.
-                  <>
-                    <Text style={styles.quoteWarn}>
-                      That looks too far to price
-                      {quote?.distance_km
-                        ? ` — about ${Number(quote.distance_km).toFixed(0)} km away`
-                        : ''}
-                      .
-                    </Text>
-                    <Text style={styles.quoteCheck}>
-                      {quoteLabel
-                        ? `We found "${quoteLabel}", which is probably not the place you meant. `
-                        : 'We could not place that address confidently. '}
-                      Set it on the map instead.
-                    </Text>
-                  </>
-                )}
-              </View>
-            )}
-
-            <Text style={styles.requestSubtitle}>
-              {!location
-                ? 'Getting your location…'
-                : prefillingPickup
-                ? 'Looking up your address…'
-                : "We'll use your current location as the exact pickup point."}
-            </Text>
-
-            <TouchableOpacity
-              style={[styles.button, !canRequest && styles.buttonDisabled]}
-              onPress={requestRide}
-              disabled={!canRequest || busy}
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
+                  {/* The fare broken into its parts. A rider who can see how
+                      the number was reached has no reason to suspect it. */}
+                  {quote.base_fare != null && (
+                    <View style={styles.breakdown}>
+                      <Row label="Base fare" value={Number(quote.base_fare).toFixed(2)} />
+                      <Row
+                        label={`Distance · ${Number(quote.distance_km).toFixed(1)} km`}
+                        value={Number(quote.distance_charge).toFixed(2)}
+                      />
+                      <Row
+                        label={`Time · ${Math.round(Number(quote.duration_min))} min`}
+                        value={Number(quote.time_charge).toFixed(2)}
+                      />
+                      {/* Only shown when demand actually moved the price, in
+                          either direction — a silent multiplier is the thing
+                          riders resent about other apps. */}
+                      {(demandDown || demandUp) && (
+                        <Row
+                          label={demandDown ? 'Quiet right now — discount' : 'Busy right now'}
+                          value={`×${Number(quote.demand_multiplier).toFixed(2)}`}
+                          color={demandDown ? colors.green : colors.red}
+                        />
+                      )}
+                    </View>
+                  )}
+                  {quoteSource === 'typed' && (
+                    // A typed quote priced whatever the geocoder chose. Naming
+                    // it is what lets the rider notice it picked the wrong one.
+                    <Hint>
+                      {quoteLabel ? `Priced to: ${quoteLabel}. ` : ''}
+                      Not right? Set it on the map.
+                    </Hint>
+                  )}
+                </>
+              ) : quoteSource === 'unresolved' ? (
+                <Notice
+                  tone="amber"
+                  title="Couldn't find that address"
+                  body="Set the destination on the map to get a price."
+                />
               ) : (
-                <Text style={styles.buttonText}>Request Ride</Text>
+                // Server withheld a price: past max_trip_km, so the
+                // destination is almost certainly not the one they meant.
+                <Notice
+                  tone="amber"
+                  title={`That looks too far to price${
+                    quote?.distance_km ? ` — about ${Number(quote.distance_km).toFixed(0)} km away` : ''
+                  }`}
+                  body={
+                    (quoteLabel
+                      ? `We found "${quoteLabel}", which is probably not the place you meant. `
+                      : 'We could not place that address confidently. ') + 'Set it on the map instead.'
+                  }
+                />
               )}
-            </TouchableOpacity>
-          </View>
-        )}
+            </Card>
+          )}
 
-        <DestinationPicker
-          visible={pickerOpen}
-          origin={location}
-          onCancel={() => setPickerOpen(false)}
-          onConfirm={handleDestinationConfirmed}
-        />
+          <Hint>
+            {!location
+              ? 'Getting your location…'
+              : "We'll use your current location as the exact pickup point. The price you see is the price you pay, in cash to your driver."}
+          </Hint>
 
-        {activeRide && (
-          <View style={styles.statusCard}>
-            <Text style={styles.statusText}>
-              {STATUS_LABELS[activeRide.status] || activeRide.status}
-            </Text>
+          <PrimaryButton
+            title={quote?.fare != null && !quoting ? `REQUEST RIDE · ${money(quote.fare, quote.currency)}` : 'REQUEST RIDE'}
+            onPress={requestRide}
+            disabled={!canRequest}
+            busy={busy}
+          />
+        </>
+      )}
 
-            {routeLine && <Text style={styles.routeText}>{routeLine}</Text>}
+      <DestinationPicker
+        visible={pickerOpen}
+        origin={location}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={handleDestinationConfirmed}
+      />
 
-            {activeRide.status === 'requested' && <ActivityIndicator style={{ marginTop: 12 }} />}
-
-            {activeRide.fare != null && (
+      {activeRide && (
+        <Card style={{ gap: 12 }}>
+          <Label>YOUR RIDE</Label>
+          <Text style={styles.statusText}>{STATUS_LABELS[activeRide.status] || activeRide.status}</Text>
+          {activeRide.status === 'requested' && <ActivityIndicator color={colors.brand} />}
+          <Timeline
+            top={<FieldStatic label="FROM" value={activeRide.pickup_address || 'Your location'} />}
+            bottom={<FieldStatic label="TO" value={activeRide.dest_address || 'Not specified'} />}
+          />
+          {activeRide.fare != null && (
+            <View style={styles.quoteHead}>
+              <Label>FARE</Label>
               <Text style={styles.rideFare}>
-                Fare {activeRide.currency} {Number(activeRide.fare).toFixed(2)}
-                <Text style={styles.rideFareMuted}>
+                {money(activeRide.fare, activeRide.currency)}
+                <Text style={styles.meta}>
                   {'  '}({Number(activeRide.distance_km).toFixed(1)} km)
                 </Text>
               </Text>
-            )}
-
-            {['requested', 'matched', 'no_drivers'].includes(activeRide.status) && (
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelRide} disabled={busy}>
-                <Text style={styles.cancelButtonText}>Cancel Request</Text>
-              </TouchableOpacity>
-            )}
-
-          </View>
-        )}
-
-        {/* What the rider owes, shown the moment the driver completes the trip.
-            The driver sees the same number on their own screen. */}
-        {finishedRide && (
-          <View style={styles.payCard}>
-            <Text style={styles.payTitle}>TRIP COMPLETED</Text>
-            <Text style={styles.payLead}>Amount to pay your driver</Text>
-            <Text style={styles.payAmount}>
-              {finishedRide.fare != null
-                ? `${finishedRide.currency} ${Number(finishedRide.fare).toFixed(2)}`
-                : 'Not priced'}
-            </Text>
-            {finishedRide.distance_km != null && (
-              <Text style={styles.payBody}>
-                {Number(finishedRide.distance_km).toFixed(1)} km trip
-              </Text>
-            )}
-            <Text style={styles.payBody}>
-              {finishedRide.fare != null
-                ? 'Pay your driver in cash.'
-                : 'No distance was recorded — agree the fare with your driver.'}
-            </Text>
-            <TouchableOpacity style={styles.payDone} onPress={dismissFare}>
-              <Text style={styles.payDoneText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {activeRide &&
-          activeRide.driver_id &&
-          DRIVER_ON_MAP_STATUSES.includes(activeRide.status) && (
-            <DriverMap ride={activeRide} />
+            </View>
           )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {['requested', 'matched', 'no_drivers'].includes(activeRide.status) && (
+            <SecondaryButton title="Cancel request" onPress={cancelRide} disabled={busy} tone="danger" />
+          )}
+        </Card>
+      )}
+
+      {/* What the rider owes, shown the moment the driver completes the trip.
+          The driver sees the same number on their own screen. */}
+      {finishedRide && (
+        <Card style={styles.pay}>
+          <Label style={{ color: colors.green }}>TRIP COMPLETED</Label>
+          <Text style={styles.payLead}>Amount to pay your driver</Text>
+          <Text style={styles.payAmount}>
+            {finishedRide.fare != null ? money(finishedRide.fare, finishedRide.currency) : 'Not priced'}
+          </Text>
+          {finishedRide.distance_km != null && (
+            <Text style={styles.meta}>{Number(finishedRide.distance_km).toFixed(1)} km trip</Text>
+          )}
+          <Hint style={{ textAlign: 'center' }}>
+            {finishedRide.fare != null
+              ? 'Pay your driver in cash.'
+              : 'No distance was recorded — agree the fare with your driver.'}
+          </Hint>
+          <PrimaryButton title="DONE" onPress={dismissFare} arrow={false} />
+        </Card>
+      )}
+
+      {activeRide &&
+        activeRide.driver_id &&
+        DRIVER_ON_MAP_STATUSES.includes(activeRide.status) && (
+          <Card pad={0} style={{ overflow: 'hidden' }}>
+            <DriverMap ride={activeRide} />
+          </Card>
+        )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#fff' },
-  container: { padding: 20, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  swap: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: colors.white,
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 24,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
-  title: { fontSize: 22, fontWeight: '700', color: '#0a3d91' },
-  logout: { color: '#c00', fontSize: 14 },
-  errorText: { color: '#c00', marginBottom: 12 },
-  requestCard: {
-    backgroundColor: '#f5f7fb',
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 24,
-  },
-  requestTitle: { fontSize: 20, fontWeight: '700', marginBottom: 16 },
-  label: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8A8578',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 14,
-    fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  requestSubtitle: { color: '#666', marginBottom: 20, fontSize: 13 },
-  button: {
-    backgroundColor: '#0a3d91',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-  },
-  mapButton: {
-    borderWidth: 1.5,
-    borderColor: '#1B2A6B',
-    borderRadius: 10,
-    padding: 13,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  mapButtonText: { color: '#1B2A6B', fontWeight: '700' },
-  quoteCard: {
-    backgroundColor: '#F4F5FA',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
-  },
-  quoteFare: { fontSize: 26, fontWeight: '800', color: '#111' },
-  quoteMuted: { color: '#6B675E', marginTop: 2 },
-  quoteWarn: { color: '#B0473F', fontWeight: '600' },
-  quoteCheck: { color: '#6B675E', fontSize: 12, marginTop: 6, lineHeight: 17 },
-  breakdown: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E3E0D8',
-    gap: 4,
-  },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  breakdownLabel: { color: '#6B675E', fontSize: 13 },
-  breakdownValue: { color: '#3A3730', fontSize: 13, fontWeight: '600' },
-  demandUp: { color: '#B0473F' },
-  demandDown: { color: '#2e7d32' },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  statusCard: {
-    backgroundColor: '#0a3d91',
-    borderRadius: 12,
-    padding: 24,
-    marginTop: 40,
-    alignItems: 'center',
-  },
-  statusText: { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  routeText: {
-    color: '#cfe0ff',
-    fontSize: 13,
-    marginTop: 10,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  cancelButton: { marginTop: 20 },
-  rideFare: { color: '#1b5e20', fontSize: 17, fontWeight: '700', marginTop: 10 },
-  rideFareMuted: { color: '#6b675e', fontSize: 13, fontWeight: '500' },
-  payCard: {
-    marginTop: 24,
-    backgroundColor: '#0f2c14',
-    borderRadius: 12,
-    padding: 22,
-    alignItems: 'center',
-  },
-  payTitle: { color: '#9fe5a4', fontSize: 13, fontWeight: '700', letterSpacing: 1.5 },
-  payLead: { color: '#cfe8d2', fontSize: 14, marginTop: 10 },
-  payAmount: { color: '#fff', fontSize: 38, fontWeight: '800', marginTop: 4 },
-  payBody: { color: '#cfe8d2', fontSize: 14, textAlign: 'center', marginTop: 8 },
-  payDone: {
-    marginTop: 18,
-    alignSelf: 'stretch',
-    backgroundColor: '#2e7d32',
-    borderRadius: 8,
-    padding: 13,
-    alignItems: 'center',
-  },
-  payDoneText: { color: '#fff', fontWeight: '700' },
-  cancelButtonText: { color: '#ffb3b3', fontSize: 14 },
+  quoteHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  meta: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  quoteFare: { fontSize: 30, fontWeight: '800', letterSpacing: -0.6, color: colors.ink, marginTop: -4 },
+  breakdown: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 10, gap: 6 },
+  statusText: { fontSize: 21, fontWeight: '800', letterSpacing: -0.2, color: colors.ink, marginTop: -6 },
+  rideFare: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4, color: colors.green },
+  pay: { gap: 8, alignItems: 'center' },
+  payLead: { fontSize: 14, color: colors.muted },
+  payAmount: { fontSize: 38, fontWeight: '800', letterSpacing: -0.8, color: colors.ink },
 });
