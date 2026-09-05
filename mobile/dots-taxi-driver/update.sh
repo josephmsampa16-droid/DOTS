@@ -10,7 +10,7 @@ set -e
 cd "$(dirname "$0")"
 BASE="https://raw.githubusercontent.com/josephmsampa16-droid/DOTS/claude/new-session-oxfk8h/mobile/dots-taxi-driver"
 
-FILES="App.js app.json assets/dots-logo-white.png components/icons.js components/ui.js lib/format.js lib/push.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/DriverHomeScreen.js screens/LoginScreen.js screens/TripsScreen.js screens/WalletScreen.js tasks/locationTask.js assets/fonts/NunitoSans-Regular.ttf assets/fonts/NunitoSans-SemiBold.ttf assets/fonts/NunitoSans-Bold.ttf assets/fonts/NunitoSans-ExtraBold.ttf lib/fonts.js package.json components/RiderCard.js"
+FILES="App.js app.json assets/dots-logo-white.png components/icons.js components/ui.js lib/format.js lib/push.js lib/pushModule.js lib/supabase.js lib/theme.js screens/AccountScreen.js screens/DriverHomeScreen.js screens/LoginScreen.js screens/TripsScreen.js screens/WalletScreen.js tasks/locationTask.js assets/fonts/NunitoSans-Regular.ttf assets/fonts/NunitoSans-SemiBold.ttf assets/fonts/NunitoSans-Bold.ttf assets/fonts/NunitoSans-ExtraBold.ttf lib/fonts.js package.json components/RiderCard.js lib/vehiclePhotos.js components/VehiclePhotos.js"
 
 echo "Updating dots-taxi-driver ..."
 for f in $FILES; do
@@ -29,8 +29,10 @@ for f in screens/TokensScreen.js screens/RiderHomeScreen.js; do
   if [ -f "$f" ]; then rm -f "$f"; echo "  removed old file $f"; fi
 done
 
-if [ ! -e node_modules/expo-font ]; then
-  echo "Installing the font loader (one time) ..."
-  npx expo install expo-font
+MISSING=""
+for pkg in expo-font expo-image-picker; do [ -e "node_modules/$pkg" ] || MISSING="$MISSING $pkg"; done
+if [ -n "$MISSING" ]; then
+  echo "Installing$MISSING (one time) ..."
+  npx expo install $MISSING
 fi
 echo "Done. Restart the app with: npx expo start"

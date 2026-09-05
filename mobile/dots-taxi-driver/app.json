@@ -9,7 +9,10 @@
       "bundleIdentifier": "com.dotseng.taxidriver",
       "supportsTablet": false,
       "infoPlist": {
-        "UIBackgroundModes": ["location", "remote-notification"],
+        "UIBackgroundModes": [
+          "location",
+          "remote-notification"
+        ],
         "NSLocationWhenInUseUsageDescription": "DOTS Taxi needs your location to match you with nearby ride requests.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "DOTS Taxi needs your location in the background so you can keep receiving ride requests while the app is minimized.",
         "NSLocationAlwaysUsageDescription": "DOTS Taxi needs your location in the background so you can keep receiving ride requests while the app is minimized."
@@ -31,6 +34,13 @@
           "locationAlwaysAndWhenInUsePermission": "DOTS Taxi needs your location to match you with nearby ride requests, including while the app is in the background.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DOTS Taxi needs your photos so you can add pictures of your vehicle for approval.",
+          "cameraPermission": "DOTS Taxi uses the camera so you can photograph your vehicle for approval."
         }
       ]
     ]

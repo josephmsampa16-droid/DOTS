@@ -23,7 +23,7 @@ export default function AccountScreen({ session, active, onLogout }) {
         .select('name, phone, driver_level, commission_rate_override')
         .eq('id', session.user.id)
         .maybeSingle(),
-      supabase.from('taxis').select('plate, model, color').eq('driver_user_id', session.user.id).maybeSingle(),
+      supabase.from('taxis').select('plate, model, color, approval_status, declined_reason').eq('driver_user_id', session.user.id).limit(1).maybeSingle(),
       supabase.from('commission_levels').select('level, rate, label').order('rate'),
       supabase.from('driver_rating_summary').select('rating_count, stars_sum, tag_counts').eq('driver_id', session.user.id).maybeSingle(),
       supabase.from('rating_tags').select('key, label').order('sort'),
@@ -100,6 +100,23 @@ export default function AccountScreen({ session, active, onLogout }) {
             <Row label="Model" value={taxi.model || '—'} />
             <Row label="Colour" value={taxi.color || '—'} />
             <Row label="Plate" value={taxi.plate || '—'} />
+            <Row
+              label="Approval"
+              value={
+                taxi.approval_status === 'approved'
+                  ? 'Approved'
+                  : taxi.approval_status === 'declined'
+                  ? 'Not approved'
+                  : 'Under review'
+              }
+              color={
+                taxi.approval_status === 'approved'
+                  ? colors.green
+                  : taxi.approval_status === 'declined'
+                  ? colors.red
+                  : colors.brand
+              }
+            />
           </>
         ) : (
           <Hint>No vehicle registered yet. Add one on the Home tab to go online.</Hint>

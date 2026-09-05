@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOTS Taxi — Vehicle approvals</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root { --blue:#20469b; --navy:#0a226f; --bg:#f5f5f5; --ink:#1c1c1e; --muted:#7a7f8a; --line:#e3e5ea; --green:#1e7a34; --red:#b0473f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Nunito Sans','Segoe UI',Helvetica,Arial,sans-serif; }
+  header { background:var(--blue); color:#fff; padding:22px 24px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { margin:0; font-size:18px; font-weight:800; letter-spacing:.3px; }
+  header .who { font-size:13px; color:#b9c8ea; }
+  header button { background:transparent; color:#fff; border:1.5px solid rgba(255,255,255,.5); border-radius:999px; padding:6px 14px; font:inherit; font-weight:700; cursor:pointer; }
+  main { max-width:1100px; margin:0 auto; padding:22px 18px 60px; }
+  .label { font-size:12px; font-weight:800; letter-spacing:1px; color:var(--blue); text-transform:uppercase; }
+  .card { background:#fff; border-radius:16px; padding:18px; box-shadow:0 2px 10px rgba(20,30,60,.06); margin-top:14px; }
+  .field { display:flex; flex-direction:column; gap:6px; border-bottom:1px solid #3a3a3a; padding-bottom:8px; margin-bottom:16px; }
+  .field input { border:0; outline:0; font:inherit; font-size:17px; font-weight:600; padding:0; background:transparent; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:14px; min-height:48px; padding:0 22px; font:inherit; font-weight:800; letter-spacing:1px; cursor:pointer; color:#fff; background:linear-gradient(90deg,#1e4399,#0a226f); }
+  .btn.secondary { background:#fff; color:var(--blue); border:1.5px solid var(--blue); border-radius:999px; letter-spacing:0; }
+  .btn.danger { background:#fff; color:var(--red); border:1.5px solid var(--red); border-radius:999px; letter-spacing:0; }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .msg { color:var(--red); font-weight:700; margin-top:10px; min-height:20px; }
+  .vehicle { display:grid; grid-template-columns: 1fr; gap:14px; }
+  @media (min-width:800px) { .vehicle { grid-template-columns: 320px 1fr; } }
+  .vehicle h3 { margin:0 0 4px; font-size:19px; font-weight:800; }
+  .meta { color:var(--muted); font-size:13px; margin:2px 0; }
+  .photos { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:10px; }
+  .photos figure { margin:0; border-radius:12px; overflow:hidden; background:var(--bg); border:1px solid var(--line); }
+  .photos img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; }
+  .photos figcaption { font-size:12px; font-weight:700; padding:6px 10px; color:var(--muted); }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+  .actions input { flex:1; min-width:220px; border:0; border-bottom:1px solid #3a3a3a; font:inherit; font-size:15px; padding:8px 0; outline:0; background:transparent; }
+  .chip { display:inline-block; border-radius:999px; padding:3px 10px; font-size:11px; font-weight:800; letter-spacing:.5px; }
+  .chip.pending { background:#e8eefb; color:var(--blue); } .chip.approved { background:#e6f4ea; color:var(--green); } .chip.declined { background:#fbeae8; color:var(--red); }
+  .empty { color:var(--muted); padding:28px 0; text-align:center; }
+  details summary { cursor:pointer; font-weight:700; color:var(--muted); margin-top:22px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>DOTS Taxi · Vehicle approvals</h1><div class="who" id="who"></div></div>
+  <button id="signout" class="hidden">Log out</button>
+</header>
+<main>
+  <section id="auth" class="card" style="max-width:420px">
+    <div class="label">Staff sign in</div>
+    <div class="field" style="margin-top:14px"><span class="label" style="font-size:11px">Email</span><input id="email" type="email" autocomplete="email"></div>
+    <div class="field"><span class="label" style="font-size:11px">Password</span><input id="password" type="password" autocomplete="current-password"></div>
+    <button class="btn" id="login">SIGN IN</button>
+    <div class="msg" id="authMsg"></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="label">Waiting for approval</div>
+    <div id="pending"></div>
+    <details><summary>Approved and declined vehicles</summary><div id="reviewed"></div></details>
+  </section>
+</main>
+<script>
+const SUPABASE_URL = 'https://rtjzcqdxprrvewtbxgsi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0anpjcWR4cHJydmV3dGJ4Z3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwOTg4NzMsImV4cCI6MjEwMzY3NDg3M30.iZ5_cBx9InDwCG_kh2fhIlVAuikR3TikXHVfIDBdepM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+$('login').onclick = async () => {
+  $('authMsg').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) $('authMsg').textContent = error.message;
+};
+$('signout').onclick = () => sb.auth.signOut();
+
+sb.auth.onAuthStateChange(async (_e, session) => {
+  if (!session) { $('auth').classList.remove('hidden'); $('app').classList.add('hidden'); $('signout').classList.add('hidden'); $('who').textContent = ''; return; }
+  const { data: p } = await sb.from('profiles').select('role, name').eq('id', session.user.id).single();
+  if (!p || p.role !== 'Staff') { $('authMsg').textContent = 'This page is for DOTS staff.'; await sb.auth.signOut(); return; }
+  $('who').textContent = p.name || session.user.email;
+  $('auth').classList.add('hidden'); $('app').classList.remove('hidden'); $('signout').classList.remove('hidden');
+  load();
+});
+
+async function load() {
+  const { data: taxis, error } = await sb.from('taxis')
+    .select('id, plate, model, color, status, approval_status, declined_reason, photo_paths, submitted_at, reviewed_at, driver_user_id, profiles:driver_user_id ( name, phone )')
+    .order('submitted_at', { ascending: false, nullsFirst: false });
+  if (error) { $('pending').innerHTML = `<div class="msg">${esc(error.message)}</div>`; return; }
+  const pending = taxis.filter((t) => t.approval_status === 'pending');
+  const reviewed = taxis.filter((t) => t.approval_status !== 'pending');
+  $('pending').innerHTML = pending.length ? '' : '<div class="card empty">Nothing waiting. New registrations appear here.</div>';
+  for (const t of pending) $('pending').appendChild(await render(t, true));
+  $('reviewed').innerHTML = '';
+  for (const t of reviewed) $('reviewed').appendChild(await render(t, false));
+}
+
+async function render(t, actionable) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  let photos = '<div class="meta">No photos on file (registered before photos were required).</div>';
+  if (t.photo_paths && t.photo_paths.length) {
+    const { data: urls } = await sb.storage.from('vehicle-photos').createSignedUrls(t.photo_paths, 3600);
+    photos = '<div class="photos">' + (urls || []).map((u, i) => u.signedUrl
+      ? `<figure><a href="${u.signedUrl}" target="_blank" rel="noopener"><img src="${u.signedUrl}" alt=""></a><figcaption>${esc((t.photo_paths[i].split('/').pop() || '').split('-')[0])}</figcaption></figure>`
+      : '').join('') + '</div>';
+  }
+  const driver = t.profiles || {};
+  el.innerHTML = `
+    <div class="vehicle">
+      <div>
+        <span class="chip ${t.approval_status}">${t.approval_status === 'pending' ? 'WAITING' : t.approval_status.toUpperCase()}</span>
+        <h3 style="margin-top:8px">${esc(t.plate)} · ${esc(t.model)}${t.color ? ' · ' + esc(t.color) : ''}</h3>
+        <div class="meta">Driver: <strong>${esc(driver.name || '—')}</strong>${driver.phone ? ' · ' + esc(driver.phone) : ''}</div>
+        <div class="meta">Submitted: ${t.submitted_at ? new Date(t.submitted_at).toLocaleString() : '—'}${t.reviewed_at ? ' · Reviewed: ' + new Date(t.reviewed_at).toLocaleString() : ''}</div>
+        ${t.declined_reason ? `<div class="meta" style="color:var(--red)">Reason: ${esc(t.declined_reason)}</div>` : ''}
+      </div>
+      <div>${photos}</div>
+    </div>
+    ${actionable ? `
+    <div class="actions">
+      <button class="btn" data-act="approved">APPROVE</button>
+      <input placeholder="Reason, if declining (the driver sees this)" data-reason>
+      <button class="btn danger" data-act="declined">Decline</button>
+    </div>
+    <div class="msg" data-msg></div>` : ''}`;
+  if (actionable) {
+    el.querySelectorAll('[data-act]').forEach((b) => b.onclick = async () => {
+      const decision = b.dataset.act;
+      const reason = el.querySelector('[data-reason]').value.trim();
+      const msg = el.querySelector('[data-msg]');
+      if (decision === 'declined' && !reason) { msg.textContent = 'Give the driver a reason.'; return; }
+      el.querySelectorAll('button').forEach((x) => x.disabled = true);
+      const { error } = await sb.rpc('review_vehicle', { p_taxi_id: t.id, p_decision: decision, p_reason: reason || null });
+      if (error) { msg.textContent = error.message; el.querySelectorAll('button').forEach((x) => x.disabled = false); return; }
+      load();
+    });
+  }
+  return el;
+}
+</script>
+</body>
+</html>

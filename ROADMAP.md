@@ -70,13 +70,13 @@ decline from the office; **an unapproved vehicle cannot go Online**.
 1. ~~§6 geofence + §3 nearby count + §4 rider contact + §5 driver card~~ **done 5 Sep**
 2. ~~§1 typed-pickup fix + §2 passenger fields~~ **done 5 Sep**
 3. ~~§7 ratings~~ **done 5 Sep** (tag list: polite · clean car · no loud music · offered water · good conversation · good music — change rows in `rating_tags` to edit)
-4. §8 photos + approval
+4. ~~§8 photos + approval~~ **done 5 Sep** — staff page at `admin/vehicle-approvals.html`; existing vehicles grandfathered as approved
 5. Parcels, on top of §2
 
 ## Decisions needed from Joseph
 - ~~Lusaka boundary~~ — decided, see §6.
 - ~~Final tag list for ratings~~ — shipped with the six you named; edit `rating_tags` to change.
-- Does a declined vehicle get a reason shown to the driver? (recommend yes)
+- ~~Does a declined vehicle get a reason shown to the driver?~~ — yes, shipped; a reason is required to decline.
 - Support phone number for the Account screens.
 
 ## Still open from before

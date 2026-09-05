@@ -26,6 +26,8 @@ import {
   Hint,
 } from '../components/ui';
 import RiderCard from '../components/RiderCard';
+import VehiclePhotos from '../components/VehiclePhotos';
+import { PHOTO_SLOTS } from '../lib/vehiclePhotos';
 import { unregisterPushNotifications } from '../lib/push';
 import { Notifications, pushSupported } from '../lib/pushModule';
 import { LOCATION_TASK_NAME } from '../tasks/locationTask';
@@ -87,6 +89,10 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [color, setColor] = useState('');
+  // Photos chosen for registration (or a resubmission), keyed by slot.
+  const [photos, setPhotos] = useState({});
+  // A declined vehicle re-enters review through the same photo tiles.
+  const [resubmitting, setResubmitting] = useState(false);
 
   const channelRef = useRef(null);
   const foregroundWatchRef = useRef(null);
@@ -346,6 +352,14 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
       Alert.alert('Missing info', 'Plate and model are required.');
       return;
     }
+    const missing = PHOTO_SLOTS.filter((slot) => !photos[slot.key]);
+    if (missing.length > 0) {
+      Alert.alert(
+        'Photos needed',
+        `Add the ${missing.map((m) => m.label.toLowerCase()).join(', ')} photo${missing.length > 1 ? 's' : ''} so DOTS can approve the vehicle.`
+      );
+      return;
+    }
     setBusy(true);
     try {
       const { error } = await supabase.from('taxis').insert({
@@ -354,6 +368,8 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
         model: model.trim(),
         color: color.trim() || null,
         status: 'Offline',
+        photo_paths: PHOTO_SLOTS.map((slot) => photos[slot.key].path),
+        submitted_at: new Date().toISOString(),
       });
       if (error) throw error;
       await fetchTaxi();
@@ -436,6 +452,34 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
     }
   };
 
+  // New photos for a declined vehicle. The database allows exactly this move
+  // (declined -> pending) and nothing else on approval from a driver.
+  const resubmitPhotos = async () => {
+    const missing = PHOTO_SLOTS.filter((slot) => !photos[slot.key]);
+    if (missing.length > 0) {
+      Alert.alert('Photos needed', 'Add all three photos before resubmitting.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from('taxis')
+        .update({
+          photo_paths: PHOTO_SLOTS.map((slot) => photos[slot.key].path),
+          approval_status: 'pending',
+        })
+        .eq('id', taxi.id);
+      if (error) throw error;
+      setResubmitting(false);
+      setPhotos({});
+      await fetchTaxi();
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleLogout = async () => {
     await stopTracking();
     if (taxi) {
@@ -487,7 +531,8 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
           <Field label="PLATE NUMBER" value={plate} onChangeText={setPlate} autoCapitalize="characters" placeholder="e.g. BAX 1234" />
           <Field label="MODEL" value={model} onChangeText={setModel} placeholder="e.g. Honda Fit 2009" />
           <Field label="COLOUR (OPTIONAL)" value={color} onChangeText={setColor} placeholder="e.g. Black" />
-          <PrimaryButton title="SAVE VEHICLE" onPress={addTaxi} busy={busy} />
+          <VehiclePhotos driverId={driverId} photos={photos} onChange={setPhotos} disabled={busy} />
+          <PrimaryButton title="SUBMIT FOR APPROVAL" onPress={addTaxi} busy={busy} />
         </Card>
       ) : (
         <>
@@ -498,6 +543,31 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
               body="Ride requests will not reach you until you top up. Tap to open your wallet."
               onPress={() => onNavigate?.('wallet')}
             />
+          )}
+
+          {taxi.approval_status === 'pending' && (
+            <Notice
+              tone="brand"
+              title="Vehicle under review"
+              body="DOTS staff are checking your photos. You can go online as soon as it is approved."
+            />
+          )}
+          {taxi.approval_status === 'declined' && !resubmitting && (
+            <Notice
+              tone="red"
+              title="Vehicle not approved"
+              body={`${taxi.declined_reason ? taxi.declined_reason + ' ' : ''}Tap to submit new photos.`}
+              onPress={() => setResubmitting(true)}
+            />
+          )}
+          {taxi.approval_status === 'declined' && resubmitting && (
+            <Card style={{ gap: 16 }}>
+              <Label>NEW PHOTOS</Label>
+              {taxi.declined_reason ? <Hint>Reason given: {taxi.declined_reason}</Hint> : null}
+              <VehiclePhotos driverId={driverId} photos={photos} onChange={setPhotos} disabled={busy} />
+              <PrimaryButton title="RESUBMIT FOR APPROVAL" onPress={resubmitPhotos} busy={busy} />
+              <SecondaryButton title="Cancel" onPress={() => setResubmitting(false)} disabled={busy} />
+            </Card>
           )}
 
           <Card>
@@ -511,7 +581,7 @@ export default function DriverHomeScreen({ session, onNavigate, logoutRef, refre
                 </Text>
               </View>
               <View style={styles.statusRight}>
-                <Toggle value={isOnline} onValueChange={toggleOnline} disabled={busy} />
+                <Toggle value={isOnline} onValueChange={toggleOnline} disabled={busy || taxi.approval_status !== 'approved'} />
                 <TouchableOpacity onPress={() => onNavigate?.('wallet')} hitSlop={8}>
                   <Text style={[styles.credit, outOfCredit && styles.creditEmpty]}>
                     {tokenBalance == null ? '—' : `${kwacha(tokenBalance)} credit`}
