@@ -38,11 +38,11 @@ storage bucket).
 ## 6. Lusaka only, for now
 Bookings whose pickup is outside Lusaka are refused with:
 > DOTS is not yet available in your city. It is coming soon — you will be able to book here.
-- Joseph (5 Sep): **30 km, and it must include Chilanga and Chongwe.** Those two
-  conflict — from Cairo Road, Chilanga is ~16 km but Chongwe is ~44 km. Options:
-  (a) one circle, radius 45 km from Cairo Road — covers both, and Kafue as a
-  side effect; (b) 30 km around Lusaka plus a 10 km pocket around Chongwe;
-  (c) 30 km and accept that Chongwe is out. **Awaiting Joseph's pick.**
+- **Decided (Joseph, 5 Sep):** service area = Lusaka circle **30 km** from Cairo
+  Road (-15.4167, 28.2833), **plus Chongwe** as a pocket of 10 km around
+  (-15.3292, 28.6820), **plus Chilanga** named explicitly (it is already inside
+  the Lusaka circle at ~16 km). Kafue is out for now. Store the areas in a
+  `service_areas` table (name, centre, radius) so adding a town is a row, not code.
   Enforce in the database (`rides` insert check) and explain in the app before
   the rider types anything.
 - Also closes the far-away geocoding problem from a different side.
@@ -74,7 +74,7 @@ decline from the office; **an unapproved vehicle cannot go Online**.
 5. Parcels, on top of §2
 
 ## Decisions needed from Joseph
-- Lusaka boundary: 30 km cannot include Chongwe (~44 km out) — pick (a), (b) or (c) under §6.
+- ~~Lusaka boundary~~ — decided, see §6.
 - Final tag list for ratings.
 - Does a declined vehicle get a reason shown to the driver? (recommend yes)
 - Support phone number for the Account screens.
