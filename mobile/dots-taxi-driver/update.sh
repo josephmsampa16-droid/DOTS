@@ -8,6 +8,13 @@
 # is nothing to reinstall afterwards — just restart "npx expo start".
 set -e
 cd "$(dirname "$0")"
+# Only ever run inside the app folder. Run from anywhere else it would pour
+# the app into that folder — which is exactly what happened once.
+if ! grep -q '"slug": "dots-taxi-driver"' app.json 2>/dev/null; then
+  echo "This is not the dots-taxi-driver folder."
+  echo "Open Terminal in the folder that contains app.json (the prompt should end with dots-taxi-driver %) and run it there."
+  exit 1
+fi
 BASE="https://raw.githubusercontent.com/josephmsampa16-droid/DOTS/claude/new-session-oxfk8h/mobile/dots-taxi-driver"
 
 # Refresh this updater itself first, so a new step (like a package to install)
