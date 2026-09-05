@@ -24,6 +24,7 @@ import {
   TabStrip,
   Hint,
   Notice,
+  Toggle,
 } from '../components/ui';
 import { CarIcon, SwapIcon } from '../components/icons';
 import SearchingMap from '../components/SearchingMap';
@@ -87,6 +88,18 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   const [pickupAddress, setPickupAddress] = useState('');
   const [destAddress, setDestAddress] = useState('');
   const [prefillingPickup, setPrefillingPickup] = useState(false);
+  // The address the phone's own position describes. While the pickup text
+  // still says this, the booking uses the device location exactly; once the
+  // rider types something else, that text is geocoded and used instead.
+  const [autoPickup, setAutoPickup] = useState('');
+  // Coordinates for a typed pickup: null while the pickup is the device
+  // location, 'unresolved' when the text could not be placed.
+  const [pickupCoords, setPickupCoords] = useState(null);
+  const [resolvingPickup, setResolvingPickup] = useState(false);
+  // Booking on someone's behalf: the passenger is who the driver meets.
+  const [forSomeoneElse, setForSomeoneElse] = useState(false);
+  const [passengerName, setPassengerName] = useState('');
+  const [passengerPhone, setPassengerPhone] = useState('');
   // Coordinates the rider confirmed on the map. When set, these are used
   // instead of geocoding the typed text — the whole point of the picker.
   const [destCoords, setDestCoords] = useState(null);
@@ -112,6 +125,12 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   const [finishedRide, setFinishedRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
+
+  // Where the car is actually sent. A typed pickup that resolved wins; the
+  // device location is the default and the fallback.
+  const pickupPoint =
+    pickupCoords && pickupCoords !== 'unresolved' ? pickupCoords : location;
+  const pickupTyped = pickupAddress.trim() !== '' && pickupAddress.trim() !== autoPickup.trim();
 
   useEffect(() => {
     registerForPushNotificationsAsync(session.user.id);
@@ -149,6 +168,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
     const described = await describeCoords(pos.coords);
     setPrefillingPickup(false);
     if (described) {
+      setAutoPickup(described);
       setPickupAddress((current) => (current.trim() ? current : described));
     }
   };
@@ -236,13 +256,36 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       .subscribe();
   };
 
+  // A pickup the rider typed is a place to find, not a label: geocode it once
+  // they stop typing, and fall back to the device location when the text is
+  // the auto-filled one again.
+  useEffect(() => {
+    if (!pickupTyped) {
+      setPickupCoords(null);
+      setResolvingPickup(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setResolvingPickup(true);
+    const timer = setTimeout(async () => {
+      const hit = await lookupAddress(pickupAddress.trim(), location);
+      if (cancelled) return;
+      setPickupCoords(hit ? { latitude: hit.latitude, longitude: hit.longitude } : 'unresolved');
+      setResolvingPickup(false);
+    }, 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pickupAddress, pickupTyped, location?.latitude, location?.longitude]);
+
   // How many drivers could take this ride. Polled faster while a search is on,
   // slower while the rider is only deciding.
   useEffect(() => {
     const point =
       activeRide && activeRide.pickup_lat != null
         ? { latitude: activeRide.pickup_lat, longitude: activeRide.pickup_lng }
-        : location;
+        : pickupPoint;
     if (!point) return undefined;
     const searching = activeRide && ['requested', 'matched', 'declined'].includes(activeRide.status);
     let cancelled = false;
@@ -260,7 +303,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [location?.latitude, location?.longitude, activeRide?.id, activeRide?.status]);
+  }, [pickupPoint?.latitude, pickupPoint?.longitude, activeRide?.id, activeRide?.status]);
 
   // Quote as soon as the rider has said where they are going — from a pin if
   // they set one, otherwise from what they typed, once they stop typing. The
@@ -275,7 +318,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   // preview, never the authority.
   useEffect(() => {
     const typed = destAddress.trim();
-    if (!location || (!destCoords && !typed)) {
+    if (!pickupPoint || (!destCoords && !typed)) {
       setQuote(null);
       setQuoteSource(null);
       setQuoteLabel(null);
@@ -320,8 +363,8 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       }
 
       const { data, error } = await supabase.rpc('quote_fare', {
-        p_pickup_lat: location.latitude,
-        p_pickup_lng: location.longitude,
+        p_pickup_lat: pickupPoint.latitude,
+        p_pickup_lng: pickupPoint.longitude,
         p_dest_lat: coords.latitude,
         p_dest_lng: coords.longitude,
         p_service_tier: serviceTier,
@@ -341,7 +384,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [location, destCoords, destAddress, serviceTier]);
+  }, [pickupPoint?.latitude, pickupPoint?.longitude, destCoords, destAddress, serviceTier]);
 
   const handleDestinationConfirmed = (picked) => {
     setPickerOpen(false);
@@ -352,8 +395,19 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   };
 
   const requestRide = async () => {
-    if (!location) {
+    if (!pickupPoint) {
       Alert.alert('Location needed', 'Waiting for your location — try again in a moment.');
+      return;
+    }
+    if (pickupCoords === 'unresolved') {
+      Alert.alert(
+        "We couldn't find that pickup",
+        `"${pickupAddress.trim()}" did not match anywhere we recognise. Check the spelling, or use your current location.`
+      );
+      return;
+    }
+    if (forSomeoneElse && (!passengerName.trim() || passengerPhone.replace(/\D/g, '').length < 9)) {
+      Alert.alert('Who is the ride for?', "Enter the passenger's name and a phone number the driver can call.");
       return;
     }
     const pickup = pickupAddress.trim();
@@ -398,9 +452,12 @@ export default function RiderHomeScreen({ session, logoutRef }) {
         .insert({
           rider_id: session.user.id,
           status: 'requested',
-          pickup_lat: location.latitude,
-          pickup_lng: location.longitude,
+          pickup_lat: pickupPoint.latitude,
+          pickup_lng: pickupPoint.longitude,
           pickup_address: pickup,
+          booked_for_self: !forSomeoneElse,
+          passenger_name: forSomeoneElse ? passengerName.trim() : null,
+          passenger_phone: forSomeoneElse ? passengerPhone.trim() : null,
           dest_address: destination || null,
           dest_lat: resolvedDest.latitude,
           dest_lng: resolvedDest.longitude,
@@ -448,7 +505,12 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   // dimmed until the rider has said where. requestRide() checks again, since a
   // disabled button is a courtesy and not a guarantee.
   const canRequest =
-    Boolean(location) && serviceArea != null && Boolean(destCoords || destAddress.trim());
+    Boolean(pickupPoint) &&
+    serviceArea != null &&
+    pickupCoords !== 'unresolved' &&
+    !resolvingPickup &&
+    Boolean(destCoords || destAddress.trim()) &&
+    (!forSomeoneElse || (passengerName.trim() && passengerPhone.trim()));
 
   // Account's Log out borrows this screen's, which also removes the push
   // token while RLS still allows it.
@@ -497,12 +559,28 @@ export default function RiderHomeScreen({ session, logoutRef }) {
           <Card style={{ paddingBottom: 16 }}>
             <Timeline
               top={
-                <Field
-                  label="FROM"
-                  value={pickupAddress}
-                  onChangeText={setPickupAddress}
-                  placeholder={prefillingPickup ? 'Finding your address…' : 'Where are you?'}
-                />
+                <View style={{ gap: 6 }}>
+                  <Field
+                    label="FROM"
+                    value={pickupAddress}
+                    onChangeText={setPickupAddress}
+                    placeholder={prefillingPickup ? 'Finding your address…' : 'Where are you?'}
+                  />
+                  {pickupTyped ? (
+                    <View style={styles.pickupNote}>
+                      <Text style={[styles.pickupNoteText, pickupCoords === 'unresolved' && { color: colors.red }]}>
+                        {resolvingPickup
+                          ? 'Finding that place…'
+                          : pickupCoords === 'unresolved'
+                          ? "Couldn't find that pickup"
+                          : 'Pickup set to what you typed'}
+                      </Text>
+                      <TouchableOpacity onPress={() => setPickupAddress(autoPickup)} hitSlop={8}>
+                        <Text style={styles.pickupLink}>Use my location</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
               }
               middle={
                 <TouchableOpacity style={styles.swap} onPress={swapAddresses} hitSlop={8}>
@@ -524,6 +602,36 @@ export default function RiderHomeScreen({ session, logoutRef }) {
                 />
               }
             />
+          </Card>
+
+          <Card style={{ gap: 14 }}>
+            <View style={styles.forRow}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Label>PASSENGER</Label>
+                <Text style={styles.forTitle}>
+                  {forSomeoneElse ? 'Booking for someone else' : 'This ride is for me'}
+                </Text>
+              </View>
+              <Toggle value={forSomeoneElse} onValueChange={setForSomeoneElse} />
+            </View>
+            {forSomeoneElse ? (
+              <>
+                <Field
+                  label="PASSENGER NAME"
+                  value={passengerName}
+                  onChangeText={setPassengerName}
+                  placeholder="Who will be in the car"
+                />
+                <Field
+                  label="PASSENGER PHONE"
+                  value={passengerPhone}
+                  onChangeText={setPassengerPhone}
+                  placeholder="A number the driver can call"
+                  keyboardType="phone-pad"
+                />
+                <Hint>The driver will see and call the passenger, not you.</Hint>
+              </>
+            ) : null}
           </Card>
 
           <SecondaryButton
@@ -732,6 +840,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
+  pickupNote: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  pickupNoteText: { fontSize: 12, ...weight('600'), color: colors.muted, flexShrink: 1 },
+  pickupLink: { fontSize: 12, ...weight('800'), color: colors.brand },
+  forRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  forTitle: { fontSize: 16, ...weight('700'), color: colors.ink },
   outsideTitle: { fontSize: 20, ...weight('800'), color: colors.ink, letterSpacing: -0.2 },
   quoteHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   meta: { fontSize: 12, ...weight('600'), color: colors.muted },
