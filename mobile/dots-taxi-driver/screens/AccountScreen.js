@@ -13,9 +13,11 @@ export default function AccountScreen({ session, active, onLogout }) {
   const [profile, setProfile] = useState(null);
   const [taxi, setTaxi] = useState(null);
   const [levels, setLevels] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [tagLabels, setTagLabels] = useState({});
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: t }, { data: l }] = await Promise.all([
+    const [{ data: p }, { data: t }, { data: l }, { data: rs }, { data: rt }] = await Promise.all([
       supabase
         .from('profiles')
         .select('name, phone, driver_level, commission_rate_override')
@@ -23,7 +25,11 @@ export default function AccountScreen({ session, active, onLogout }) {
         .maybeSingle(),
       supabase.from('taxis').select('plate, model, color').eq('driver_user_id', session.user.id).maybeSingle(),
       supabase.from('commission_levels').select('level, rate, label').order('rate'),
+      supabase.from('driver_rating_summary').select('rating_count, stars_sum, tag_counts').eq('driver_id', session.user.id).maybeSingle(),
+      supabase.from('rating_tags').select('key, label').order('sort'),
     ]);
+    setSummary(rs ?? null);
+    setTagLabels(Object.fromEntries((rt ?? []).map((x) => [x.key, x.label])));
     setProfile(p ?? null);
     setTaxi(t ?? null);
     setLevels(l ?? []);
@@ -63,6 +69,28 @@ export default function AccountScreen({ session, active, onLogout }) {
             <Chip text={`${levelLabel.toUpperCase()} · ${percent} COMMISSION`} style={{ marginTop: 4 }} />
           </View>
         </View>
+      </Card>
+
+      <Card style={{ gap: 10 }}>
+        <Label>YOUR RATING</Label>
+        {summary && summary.rating_count > 0 ? (
+          <>
+            <View style={styles.ratingRow}>
+              <Text style={styles.ratingBig}>★ {(summary.stars_sum / summary.rating_count).toFixed(2)}</Text>
+              <Text style={styles.ratingCount}>
+                from {summary.rating_count} {summary.rating_count === 1 ? 'rider' : 'riders'}
+              </Text>
+            </View>
+            {Object.entries(summary.tag_counts || {})
+              .filter(([, n]) => Number(n) > 0)
+              .sort((a, b) => Number(b[1]) - Number(a[1]))
+              .map(([k, n]) => (
+                <Row key={k} label={tagLabels[k] || k} value={String(n)} />
+              ))}
+          </>
+        ) : (
+          <Hint>No ratings yet. Riders rate you after each completed trip; the totals show here.</Hint>
+        )}
       </Card>
 
       <Card style={{ gap: 10 }}>
@@ -107,6 +135,9 @@ export default function AccountScreen({ session, active, onLogout }) {
 
 const styles = StyleSheet.create({
   profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  ratingRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  ratingBig: { fontSize: 28, ...weight('800'), color: colors.brand, letterSpacing: -0.5 },
+  ratingCount: { fontSize: 13, ...weight('600'), color: colors.muted },
   avatar: {
     width: 56,
     height: 56,

@@ -29,6 +29,7 @@ import {
 import { CarIcon, SwapIcon } from '../components/icons';
 import SearchingMap from '../components/SearchingMap';
 import DriverCard from '../components/DriverCard';
+import RatingCard from '../components/RatingCard';
 
 const TIERS = [
   { key: 'standard', label: 'Standard', Icon: CarIcon },
@@ -123,6 +124,9 @@ export default function RiderHomeScreen({ session, logoutRef }) {
   // rider dismisses it — the fare is the last thing they need, not the first
   // thing to disappear.
   const [finishedRide, setFinishedRide] = useState(null);
+  // The latest completed ride that still wants a rating. Found on launch
+  // and again after each completion; RatingCard hides itself once rated.
+  const [unratedRide, setUnratedRide] = useState(null);
   const [busy, setBusy] = useState(false);
   const channelRef = useRef(null);
 
@@ -136,6 +140,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
     registerForPushNotificationsAsync(session.user.id);
     getCurrentLocation();
     checkForActiveRide();
+    findUnratedRide();
     subscribeToOwnRideUpdates();
 
     return () => {
@@ -171,6 +176,29 @@ export default function RiderHomeScreen({ session, logoutRef }) {
       setAutoPickup(described);
       setPickupAddress((current) => (current.trim() ? current : described));
     }
+  };
+
+  const findUnratedRide = async () => {
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('rides')
+      .select('id, driver_id, status, fare, currency, distance_km, updated_at')
+      .eq('rider_id', session.user.id)
+      .eq('status', 'completed')
+      .not('driver_id', 'is', null)
+      .gte('updated_at', since)
+      .order('updated_at', { ascending: false })
+      .limit(3);
+    if (!recent || recent.length === 0) {
+      setUnratedRide(null);
+      return;
+    }
+    const { data: rated } = await supabase
+      .from('ride_ratings')
+      .select('ride_id')
+      .in('ride_id', recent.map((r) => r.id));
+    const ratedIds = new Set((rated ?? []).map((r) => r.ride_id));
+    setUnratedRide(recent.find((r) => !ratedIds.has(r.id)) ?? null);
   };
 
   const checkForActiveRide = async () => {
@@ -245,6 +273,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
             // stays until they say they are done with it.
             setFinishedRide(ride);
             setActiveRide(null);
+            if (ride.driver_id) setUnratedRide(ride);
           } else if (TERMINAL_STATUSES.includes(ride.status)) {
             setActiveRide(ride);
             setTimeout(() => setActiveRide(null), 4000);
@@ -543,6 +572,35 @@ export default function RiderHomeScreen({ session, logoutRef }) {
     <Screen role="RIDER" keyboard strip={strip}>
       {locationError && <Notice tone="red" title="Location needed" body={locationError} />}
 
+      {finishedRide && finishedRide.driver_id && <DriverCard ride={finishedRide} />}
+
+      {finishedRide && (
+        <Card style={styles.pay}>
+          <Label style={{ color: colors.green }}>TRIP COMPLETED</Label>
+          <Text style={styles.payLead}>Amount to pay your driver</Text>
+          <Text style={styles.payAmount}>
+            {finishedRide.fare != null ? money(finishedRide.fare, finishedRide.currency) : 'Not priced'}
+          </Text>
+          {finishedRide.distance_km != null && (
+            <Text style={styles.meta}>{Number(finishedRide.distance_km).toFixed(1)} km trip</Text>
+          )}
+          <Hint style={{ textAlign: 'center' }}>
+            {finishedRide.fare != null
+              ? 'Pay your driver in cash.'
+              : 'No distance was recorded — agree the fare with your driver.'}
+          </Hint>
+          <PrimaryButton title="DONE" onPress={dismissFare} arrow={false} />
+        </Card>
+      )}
+
+      {!activeRide && unratedRide && (
+        <RatingCard
+          ride={unratedRide}
+          onRated={() => setUnratedRide(null)}
+          onDismiss={() => setUnratedRide(null)}
+        />
+      )}
+
       {!activeRide && serviceArea === null && (
         <Card style={{ gap: 10 }}>
           <Label>NOT HERE YET</Label>
@@ -794,26 +852,7 @@ export default function RiderHomeScreen({ session, logoutRef }) {
 
       {/* What the rider owes, shown the moment the driver completes the trip.
           The driver sees the same number on their own screen. */}
-      {finishedRide && finishedRide.driver_id && <DriverCard ride={finishedRide} />}
 
-      {finishedRide && (
-        <Card style={styles.pay}>
-          <Label style={{ color: colors.green }}>TRIP COMPLETED</Label>
-          <Text style={styles.payLead}>Amount to pay your driver</Text>
-          <Text style={styles.payAmount}>
-            {finishedRide.fare != null ? money(finishedRide.fare, finishedRide.currency) : 'Not priced'}
-          </Text>
-          {finishedRide.distance_km != null && (
-            <Text style={styles.meta}>{Number(finishedRide.distance_km).toFixed(1)} km trip</Text>
-          )}
-          <Hint style={{ textAlign: 'center' }}>
-            {finishedRide.fare != null
-              ? 'Pay your driver in cash.'
-              : 'No distance was recorded — agree the fare with your driver.'}
-          </Hint>
-          <PrimaryButton title="DONE" onPress={dismissFare} arrow={false} />
-        </Card>
-      )}
 
       {activeRide &&
         activeRide.driver_id &&

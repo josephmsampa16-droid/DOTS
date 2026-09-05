@@ -12,6 +12,7 @@ const LIVE = ['matched', 'accepted', 'arrived', 'in_progress'];
 
 export default function DriverCard({ ride }) {
   const [driver, setDriver] = useState(null);
+  const [tagLabels, setTagLabels] = useState({});
   const driverId = ride?.driver_id;
 
   useEffect(() => {
@@ -20,11 +21,14 @@ export default function DriverCard({ ride }) {
       return;
     }
     let cancelled = false;
-    supabase
-      .rpc('driver_public_profile', { p_driver_id: driverId })
-      .then(({ data }) => {
-        if (!cancelled) setDriver(data?.[0] ?? null);
-      });
+    Promise.all([
+      supabase.rpc('driver_public_profile', { p_driver_id: driverId }),
+      supabase.from('rating_tags').select('key, label'),
+    ]).then(([{ data }, { data: tags }]) => {
+      if (cancelled) return;
+      setDriver(data?.[0] ?? null);
+      setTagLabels(Object.fromEntries((tags ?? []).map((t) => [t.key, t.label])));
+    });
     return () => {
       cancelled = true;
     };
@@ -35,6 +39,12 @@ export default function DriverCard({ ride }) {
   const vehicle = [driver.vehicle_color, driver.vehicle_model].filter(Boolean).join(' ');
   const live = LIVE.includes(ride.status);
   const rating = driver.rating != null ? Number(driver.rating).toFixed(2) : null;
+  // The two things riders most often said about this driver.
+  const said = Object.entries(driver.tag_counts || {})
+    .filter(([, n]) => Number(n) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 2)
+    .map(([k, n]) => `${tagLabels[k] || k} · ${n}`);
 
   return (
     <View style={styles.card}>
@@ -46,11 +56,12 @@ export default function DriverCard({ ride }) {
         <View style={styles.body}>
           <Text style={styles.name}>{driver.name || 'DOTS driver'}</Text>
           <Text style={styles.meta}>
-            {rating ? `★ ${rating}` : 'New to DOTS'}
+            {rating ? `★ ${rating} (${driver.rating_count})` : 'New to DOTS'}
             {' · '}
             {driver.rides_completed === 1 ? '1 ride' : `${driver.rides_completed} rides`}
           </Text>
           {vehicle ? <Text style={styles.vehicle}>{vehicle}</Text> : null}
+          {said.length > 0 ? <Text style={styles.said}>{said.join('   ')}</Text> : null}
         </View>
         {driver.vehicle_plate ? <Chip text={driver.vehicle_plate} tone="brand" /> : null}
       </View>
@@ -84,6 +95,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 17, ...weight('800'), color: colors.ink },
   meta: { fontSize: 13, ...weight('600'), color: colors.muted },
   vehicle: { fontSize: 13, ...weight('400'), color: colors.muted },
+  said: { fontSize: 12, ...weight('700'), color: colors.brand, marginTop: 2 },
   call: {
     borderWidth: 1.5,
     borderColor: colors.brand,
