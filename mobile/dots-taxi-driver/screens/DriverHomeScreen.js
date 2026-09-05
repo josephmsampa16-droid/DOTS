@@ -85,10 +85,10 @@ export default function DriverHomeScreen({ session }) {
   const fetchTokenBalance = useCallback(async () => {
     const { data } = await supabase
       .from('driver_wallets')
-      .select('token_balance')
+      .select('credit_balance')
       .eq('driver_id', driverId)
       .maybeSingle();
-    setTokenBalance(data?.token_balance ?? 0);
+    setTokenBalance(Number(data?.credit_balance ?? 0));
   }, [driverId]);
 
   const fetchTaxi = useCallback(async () => {
@@ -458,11 +458,11 @@ export default function DriverHomeScreen({ session }) {
         <Text style={styles.title}>DOTS Taxi Driver</Text>
         <View style={styles.headerRight}>
           <TouchableOpacity
-            style={[styles.tokenChip, tokenBalance === 0 && styles.tokenChipEmpty]}
+            style={[styles.tokenChip, (tokenBalance != null && tokenBalance <= 0) && styles.tokenChipEmpty]}
             onPress={() => setTokensOpen(true)}
           >
-            <Text style={[styles.tokenChipText, tokenBalance === 0 && styles.tokenChipTextEmpty]}>
-              {tokenBalance ?? '—'} tokens
+            <Text style={[styles.tokenChipText, (tokenBalance != null && tokenBalance <= 0) && styles.tokenChipTextEmpty]}>
+              {tokenBalance == null ? '—' : `K${tokenBalance.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout}>
@@ -519,9 +519,9 @@ export default function DriverHomeScreen({ session }) {
             {taxi.color ? ` (${taxi.color})` : ''}
           </Text>
 
-          {tokenBalance === 0 && (
+          {(tokenBalance != null && tokenBalance <= 0) && (
             <TouchableOpacity style={styles.emptyBanner} onPress={() => setTokensOpen(true)}>
-              <Text style={styles.emptyBannerTitle}>You are out of tokens</Text>
+              <Text style={styles.emptyBannerTitle}>You are out of credit</Text>
               <Text style={styles.emptyBannerBody}>
                 Ride requests will not reach you until you top up. Tap to buy.
               </Text>

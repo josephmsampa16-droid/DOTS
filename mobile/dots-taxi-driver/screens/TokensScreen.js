@@ -39,7 +39,7 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
 
   const loadPricing = useCallback(async () => {
     const { data } = await supabase
-      .from('pricing').select('token_price, currency').eq('active', true).maybeSingle();
+      .from('pricing').select('token_price, currency').eq('tier', 'standard').eq('active', true).maybeSingle();
     if (data) {
       setTokenPrice(Number(data.token_price));
       setCurrency(data.currency);
@@ -101,7 +101,7 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
         });
         if (error) return; // transient; keep polling until the timeout
         if (data?.status === 'SUCCESSFUL') {
-          finish('done', `${data.tokens} tokens added. You now have ${data.token_balance}.`);
+          finish('done', `${data.tokens} tokens added. Your credit is now ${currency} ${Number(data.credit_balance).toFixed(2)}.`);
         } else if (data?.status === 'FAILED') {
           finish('failed', 'The payment was declined or cancelled. Nothing has been charged.');
         }
@@ -150,10 +150,18 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
         <Text style={styles.title}>Ride tokens</Text>
 
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceValue}>{balance ?? '—'}</Text>
-          <Text style={styles.balanceLabel}>tokens left</Text>
-          {balance === 0 && (
+          <Text style={styles.balanceValue}>
+            {balance == null ? '—' : `${currency} ${Number(balance).toFixed(2)}`}
+          </Text>
+          <Text style={styles.balanceLabel}>credit</Text>
+          <Text style={styles.balanceHint}>
+            DOTS takes its commission from this after each ride. Cash fares are yours.
+          </Text>
+          {balance != null && balance <= 0 && (
             <Text style={styles.balanceWarn}>
+              {balance < 0
+                ? `You owe DOTS ${currency} ${Math.abs(balance).toFixed(2)} from your last ride. `
+                : ''}
               You will not receive ride requests until you top up.
             </Text>
           )}
@@ -168,7 +176,12 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
               onPress={() => setQuantity(n)}
               disabled={busy}
             >
-              <Text style={[styles.bundleNum, quantity === n && styles.bundleNumActive]}>{n}</Text>
+              <Text style={[styles.bundleNum, quantity === n && styles.bundleNumActive]}>
+                {tokenPrice != null ? `K${(n * tokenPrice).toFixed(0)}` : n}
+              </Text>
+              <Text style={[styles.bundleSub, quantity === n && styles.bundleSubActive]}>
+                {n} tokens
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -233,7 +246,9 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
             {history.map((row) => (
               <View key={row.id} style={styles.historyRow}>
                 <Text style={styles.historyReason}>
-                  {row.reason === 'ride'
+                  {row.reason === 'commission'
+                    ? 'DOTS commission'
+                    : row.reason === 'ride'
                     ? 'Completed ride'
                     : row.reason === 'topup'
                     ? 'Tokens purchased'
@@ -244,7 +259,7 @@ export default function TokensScreen({ visible, session, balance, onClose, onBal
                     : 'Adjustment'}
                 </Text>
                 <Text style={[styles.historyDelta, row.delta > 0 && styles.historyDeltaUp]}>
-                  {row.delta > 0 ? `+${row.delta}` : row.delta}
+                  {row.delta > 0 ? '+' : ''}{Number(row.delta).toFixed(2)}
                 </Text>
               </View>
             ))}
@@ -268,6 +283,7 @@ const styles = StyleSheet.create({
   },
   balanceValue: { fontSize: 44, fontWeight: '800', color: '#111' },
   balanceLabel: { color: '#6B675E', marginTop: 2 },
+  balanceHint: { color: '#8A867D', fontSize: 12, marginTop: 8, textAlign: 'center', lineHeight: 17 },
   balanceWarn: { color: '#B0473F', fontWeight: '700', marginTop: 10, textAlign: 'center' },
   section: { fontSize: 13, fontWeight: '700', color: '#6B675E', marginBottom: 8, marginTop: 4 },
   bundleRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
@@ -282,6 +298,8 @@ const styles = StyleSheet.create({
   bundleActive: { borderColor: '#1B2A6B', backgroundColor: '#1B2A6B' },
   bundleNum: { fontSize: 18, fontWeight: '700', color: '#111' },
   bundleNumActive: { color: '#fff' },
+  bundleSub: { fontSize: 11, color: '#6B675E', marginTop: 2 },
+  bundleSubActive: { color: '#C9CFEA' },
   total: { fontSize: 20, fontWeight: '800', marginBottom: 18 },
   totalMuted: { fontSize: 13, fontWeight: '400', color: '#6B675E' },
   input: {

@@ -2,7 +2,7 @@
 //
 // Polled by the driver app after driver-buy-tokens. Asks MTN for the status of
 // a Request to Pay and, the first time it comes back SUCCESSFUL, credits the
-// tokens.
+// wallet. adjust_tokens converts the token count to kwacha at token_price.
 //
 // Separate from mtn-check-payment rather than an extra branch inside it: that
 // one is staff-only and confirms bookings, and widening its auth so drivers
@@ -30,8 +30,8 @@ function json(body: unknown, status: number) {
 
 async function currentBalance(admin: any, driverId: string) {
   const { data } = await admin
-    .from('driver_wallets').select('token_balance').eq('driver_id', driverId).maybeSingle();
-  return data?.token_balance ?? 0;
+    .from('driver_wallets').select('credit_balance').eq('driver_id', driverId).maybeSingle();
+  return Number(data?.credit_balance ?? 0);
 }
 
 Deno.serve(async (req) => {
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     if (txn.status === 'SUCCESSFUL' || txn.status === 'FAILED') {
       return json({
         status: txn.status,
-        token_balance: await currentBalance(admin, user.id),
+        credit_balance: await currentBalance(admin, user.id),
       }, 200);
     }
 
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
       status: newStatus,
       credited,
       tokens: txn.token_quantity,
-      token_balance: await currentBalance(admin, user.id),
+      credit_balance: await currentBalance(admin, user.id),
     }, 200);
   } catch (err) {
     return json({ error: String(err) }, 500);

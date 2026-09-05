@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
 
     // Server-side price. The client says how many, never how much.
     const { data: pricing, error: pricingErr } = await admin
-      .from('pricing').select('id, token_price, currency').eq('active', true).maybeSingle();
+      .from('pricing').select('id, token_price, currency').eq('tier', 'standard').eq('active', true).maybeSingle();
     if (pricingErr || !pricing) return json({ error: 'No active pricing' }, 500);
 
     const amount = (Number(pricing.token_price) * quantity).toFixed(2);
